@@ -81,6 +81,7 @@ export default function LandingPage() {
         </div>
       </nav>
 
+
       {/* 2. HERO SEKCIJA (TRIPTIH) */}
       <section className="max-w-7xl mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
         <div className="lg:col-span-3 flex flex-col gap-4 self-center justify-center">
@@ -109,7 +110,6 @@ export default function LandingPage() {
             ))}
           </div>
         </div>
-
         <div className="lg:col-span-6 h-96 relative">
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 1 }} className="rounded-[35px] overflow-hidden shadow-2xl border-4 border-white h-full relative group">
             <Image src="/doctor.png" alt="Doctor" fill className="object-cover object-top transition-transform duration-1000 group-hover:scale-105" priority />
@@ -119,6 +119,7 @@ export default function LandingPage() {
           </motion.div>
         </div>
       </section>
+
 
       {/* 3. MEDICINE IN THE FUTURE */}
       <section className="bg-slate-50 py-10 px-6 mt-2">
@@ -220,6 +221,7 @@ export default function LandingPage() {
                 </label>
               </div>
 
+
               <button type="submit" disabled={status === 'loading'} className="w-full bg-[#E31E24] text-white font-black py-4 rounded-xl shadow-xl uppercase tracking-widest hover:bg-[#b0171c] transition-all text-sm">
                 {status === 'loading' ? 'ANALYZING...' : 'SEND FOR EXPERT ANALYSIS →'}
               </button>
@@ -267,4 +269,5 @@ export default function LandingPage() {
     </main>
   );
 }
+
 
