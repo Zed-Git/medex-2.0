@@ -1,16 +1,24 @@
 // src/lib/supabase.ts
-import { createClient } from '@supabase/supabase-js';
 
-// Proveravamo da li su podaci u .env.local pravilno upisani
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+import { createClient } from "@supabase/supabase-js";
 
-// Kreiramo klijenta koji će pričati sa bazom
-// Ako su URL ili Key prazni, ovde će izbaciti grešku, što je dobro za dijagnostiku
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// --- 1. Učitavanje iz .env.local ---
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-/* 
-OBJAŠNJENJE: 
-Premestili smo fajl u 'lib' folder jer je to 'apoteka' našeg projekta 
-gde držimo sve eksterne servise.
-*/
+// --- 2. Validacija (obavezno) ---
+if (!supabaseUrl) {
+  throw new Error("❌ Supabase URL nije pronađen! Proveri NEXT_PUBLIC_SUPABASE_URL u .env.local");
+}
+
+if (!supabaseAnonKey) {
+  throw new Error("❌ Supabase Anon Key nije pronađen! Proveri NEXT_PUBLIC_SUPABASE_ANON_KEY u .env.local");
+}
+
+// --- 3. Kreiranje klijenta ---
+// Ovo je jedini ispravan način da Next.js radi sa Supabase-om
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false, // server actions ne koriste sesije
+  },
+});
