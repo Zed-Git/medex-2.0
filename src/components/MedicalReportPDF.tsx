@@ -107,3 +107,5 @@ const MedicalReportPDF = ({ patient, analysis, recommendation, references }: Pro
 );
 
 export default MedicalReportPDF;
+
+

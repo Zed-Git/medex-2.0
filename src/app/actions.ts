@@ -80,3 +80,5 @@ THERAPY: ${anamnesis.therapy || 'N/A'}
     return { success: false, error: "Unexpected server error" };
   }
 }
+
+

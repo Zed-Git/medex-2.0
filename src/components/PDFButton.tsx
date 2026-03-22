@@ -55,3 +55,5 @@ export default function PDFButton({ patient, analysis, recommendation, reference
     </PDFDownloadLink>
   );
 }
+
+

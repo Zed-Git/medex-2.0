@@ -78,10 +78,18 @@ export default function LandingPage() {
       <nav className="sticky top-0 z-50 w-full bg-[#2E5481] border-b-4 border-[#E31E24] py-4 px-6 md:px-12 text-white shadow-xl">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="cursor-pointer flex flex-col min-w-max">
-            <div className="flex items-baseline leading-none">
-              <span className="text-2xl md:text-3xl font-black tracking-tighter italic uppercase">MedExNews</span>
-              <sup className="text-[10px] font-black text-[#E31E24] ml-0.5 bg-white px-1 rounded-sm uppercase italic">AI</sup>
-            </div>
+
+        {/* --- LOGO (RESTAURIRANO) --- */}   
+ <div className="flex items-baseline leading-none">
+  <span className="text-2xl md:text-3xl font-black tracking-tighter italic">
+    MedExNews
+  </span>
+  <sup className="text-[20px] font-black text-[#E31E24] ml-0.5 bg-white px-1 rounded-sm italic">
+    AI
+  </sup>
+</div>
+
+
             <div className="h-1 w-full bg-[#E31E24] mt-1"></div>
           </div>
           <div className="hidden lg:flex flex-col items-center flex-1 mx-8 text-center leading-tight">
@@ -263,10 +271,17 @@ export default function LandingPage() {
             </ul>
           </div>
           <div className="flex flex-col items-start md:items-end">
-             <div className="flex items-baseline mb-2 leading-none">
-                <span className="text-3xl font-black italic uppercase tracking-tighter leading-none">MedExNews</span>
-                <sup className="text-xs text-[#E31E24] ml-1 font-black uppercase italic leading-none">AI</sup>
-             </div>
+
+             <div className="flex items-baseline leading-none">
+  <span className="text-1xl md:text-1xl font-black tracking-tighter italic">
+    MedExNews
+  </span>
+  <sup className="text-[12px] font-black text-[#E31E24] ml-0.5 bg-white px-1 rounded-sm italic">
+    AI
+  </sup>
+</div>
+
+
              <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-4 leading-none">© 2026 MedExNews | ALL RIGHTS RESERVED</p>
           </div>
         </div>
@@ -295,3 +310,15 @@ export default function LandingPage() {
     </main>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+

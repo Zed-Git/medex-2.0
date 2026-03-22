@@ -22,3 +22,4 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: false, // server actions ne koriste sesije
   },
 });
+
