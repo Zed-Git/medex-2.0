@@ -10,12 +10,24 @@
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet } from '@react-pdf/renderer';
 
-interface PatientData {
-  patient_name: string;
-  created_at: string;
-  medical_note: string;
+// --- [FUNCTIONAL BLOCK: PROPS INTERFACE] ---
+// [DODATO vs stariji layout: tipovi za integration sa webhook-om i backendom]
+// Ovo omogućava da backend (webhook) precizno prosledi podatke u PDF komponentu.
+export interface MedicalReportPDFProps {
+  patient: {
+    patient_name: string;
+    created_at: string;
+    medical_note: string;
+  };
+  analysis?: string;
+  recommendation?: string;
+  references?: string;
+  // [DODATO] mode: omogućava razlikovanje PREVIEW vs FINAL PDF-a
+  mode?: 'final' | 'preview';
 }
 
+// --- [FUNCTIONAL BLOCK: STYLES] ---
+// [ZLATNI STANDARD - VIZUELNI LAYOUT PDF-a]
 const styles = StyleSheet.create({
   page: { padding: 40, backgroundColor: '#ffffff', fontFamily: 'Helvetica' },
   header: { marginBottom: 15 },
@@ -31,31 +43,63 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 11, fontWeight: 'bold', color: '#2E5481', textTransform: 'uppercase', marginBottom: 8 },
   contentBox: { fontSize: 10, lineHeight: 1.6, color: '#1e293b', borderLeftWidth: 2, borderLeftColor: '#2E5481', paddingLeft: 10 },
   conclusionBox: { backgroundColor: '#E1EBF5', padding: 12, borderRadius: 2 },
-  
-  // ZLATNI STANDARD: Note iznad linije
   noteAboveLine: { fontSize: 8, color: '#E31E24', fontWeight: 'bold', marginBottom: 5 },
   footerContainer: { position: 'absolute', bottom: 30, left: 40, right: 40 },
   footerLine: { borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 10 },
-  legalDisclaimer: { fontSize: 7, color: '#2E5481', textAlign: 'center', lineHeight: 1.5 }
+  legalDisclaimer: { fontSize: 7, color: '#2E5481', textAlign: 'center', lineHeight: 1.5 },
+
+  // --- [NEW STYLE BLOCK: PREVIEW BADGE] ---
+  // [DODATO vs Zlatni Standard: vizuelni indikator da je PDF samo preview]
+  previewBadge: {
+    backgroundColor: '#F97316', // narandžasta, jasno vidljiva
+    padding: 6,
+    marginBottom: 10,
+    borderRadius: 2,
+  },
+  previewBadgeText: {
+    fontSize: 9,
+    color: '#ffffff',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
 });
 
-interface Props {
-  patient: PatientData;
-  analysis?: string;
-  recommendation?: string;
-  references?: string;
-}
-
-const MedicalReportPDF = ({ patient, analysis, recommendation, references }: Props) => (
+// --- [FUNCTIONAL BLOCK: MAIN COMPONENT] ---
+// [ZLATNI STANDARD + DODATO: korištenje "mode" za PREVIEW indikator]
+const MedicalReportPDF = ({
+  patient,
+  analysis,
+  recommendation,
+  references,
+  mode, // [DODATO] — sada se stvarno koristi u layoutu
+}: MedicalReportPDFProps) => (
   <Document>
     <Page size="A4" style={styles.page}>
+      {/* --- [SUB-BLOCK: OPTIONAL PREVIEW BADGE] --- */}
+      {/* [DODATO vs Zlatni Standard: ako je mode === 'preview', prikaži upozorenje] */}
+      {mode === 'preview' && (
+        <View style={styles.previewBadge}>
+          <Text style={styles.previewBadgeText}>
+            PREVIEW VERSION – NOT FOR PATIENT USE
+          </Text>
+        </View>
+      )}
+
+      {/* --- [SUB-BLOCK: HEADER] --- */}
+      {/* [ZLATNI STANDARD - NE MENJAMO VIZUELNI IDENTITET] */}
       <View style={styles.header}>
-        <Text style={styles.logoText}>MEDEXNEWS <Text style={styles.aiTag}>AI</Text></Text>
-        <Text style={styles.doctorTitle}>Scientists & Cardiology Team | Evidence Based Personalized Medicine</Text>
+        <Text style={styles.logoText}>
+          MEDEXNEWS <Text style={styles.aiTag}>AI</Text>
+        </Text>
+        <Text style={styles.doctorTitle}>
+          Scientists & Cardiology Team | Evidence Based Personalized Medicine
+        </Text>
         <View style={styles.blueLine} />
         <View style={styles.redLine} />
       </View>
 
+      {/* --- [SUB-BLOCK: PATIENT INFO ROW] --- */}
+      {/* Levo: ime pacijenta, desno: datum pregleda */}
       <View style={styles.infoRow}>
         <View>
           <Text style={styles.infoLabel}>NAME</Text>
@@ -63,41 +107,64 @@ const MedicalReportPDF = ({ patient, analysis, recommendation, references }: Pro
         </View>
         <View style={{ textAlign: 'right' }}>
           <Text style={styles.infoLabel}>EXAMINATION DATE</Text>
-          <Text style={styles.infoValue}>{new Date(patient.created_at).toLocaleDateString('en-US')}</Text>
+          <Text style={styles.infoValue}>
+            {new Date(patient.created_at).toLocaleDateString('en-US')}
+          </Text>
         </View>
       </View>
 
+      {/* --- [SUB-BLOCK: SECTION A - ANAMNESIS] --- */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>A) PATIENT ANAMNESIS & DATA</Text>
-        <View style={styles.contentBox}><Text>{patient.medical_note}</Text></View>
+        <View style={styles.contentBox}>
+          <Text>{patient.medical_note}</Text>
+        </View>
       </View>
 
+      {/* --- [SUB-BLOCK: SECTION B - ANALYSIS] --- */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>B) EXPERT CLINICAL FINDINGS & ANALYSIS</Text>
-        <View style={styles.contentBox}><Text>{analysis || 'N/A'}</Text></View>
+        <View style={styles.contentBox}>
+          <Text>{analysis || 'N/A'}</Text>
+        </View>
       </View>
 
+      {/* --- [SUB-BLOCK: SECTION C - CONCLUSIONS] --- */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>C) CONCLUSIONS</Text>
         <View style={styles.conclusionBox}>
-          <Text style={{ fontSize: 10, lineHeight: 1.5 }}>{recommendation || 'N/A'}</Text>
+          <Text style={{ fontSize: 10, lineHeight: 1.5 }}>
+            {recommendation || 'N/A'}
+          </Text>
         </View>
       </View>
 
-      {/* D) REFERENCES - Spuštene dole */}
+      {/* --- [SUB-BLOCK: SECTION D - REFERENCES] --- */}
+      {/* [ZLATNI STANDARD: reference spuštene dole] */}
       <View style={{ marginTop: 30 }}>
-        <Text style={styles.sectionTitle}>D) REFERENCES (Evidence Based Medicine)</Text>
+        <Text style={styles.sectionTitle}>
+          D) REFERENCES (Evidence Based Medicine)
+        </Text>
         <View style={styles.contentBox}>
-          <Text style={{ fontSize: 8 }}>{references || '1. ESC Guidelines. 2. ACC/AHA Clinical Practice Standards.'}</Text>
+          <Text style={{ fontSize: 8 }}>
+            {references ||
+              '1. ESC Guidelines. 2. ACC/AHA Clinical Practice Standards.'}
+          </Text>
         </View>
       </View>
 
+      {/* --- [SUB-BLOCK: FOOTER + NOTE] --- */}
+      {/* Note iznad linije + legal disclaimer u dnu stranice */}
       <View style={styles.footerContainer}>
-        {/* ZLATNI STANDARD: Note tačno iznad linije */}
-        <Text style={styles.noteAboveLine}>Note: <Text style={{ color: '#2E5481' }}>The report should be shown to your doctor.</Text></Text>
+        <Text style={styles.noteAboveLine}>
+          Note:{' '}
+          <Text style={{ color: '#2E5481' }}>
+            The report should be shown to your doctor.
+          </Text>
+        </Text>
         <View style={styles.footerLine}>
           <Text style={styles.legalDisclaimer}>
-            2026 All Rights Reserved. Unauthorized Use Prohibited. {"\n"}
+            2026 All Rights Reserved. Unauthorized Use Prohibited. {'\n'}
             MedExNews does not provide medical advices, diagnosis or treatment.
           </Text>
         </View>
@@ -107,5 +174,3 @@ const MedicalReportPDF = ({ patient, analysis, recommendation, references }: Pro
 );
 
 export default MedicalReportPDF;
-
-

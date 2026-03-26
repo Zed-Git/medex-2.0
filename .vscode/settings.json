@@ -1,0 +1,27 @@
+{
+  // --- [FUNCTIONAL BLOCK: CLEAN DIAGNOSTICS] ---
+  // Gasimo proveru Markdown fajlova (ovo uklanja onih 10 grešaka)
+  "markdown.validate.enabled": false,
+
+  // --- [FUNCTIONAL BLOCK: NOISE REDUCTION] ---
+  "files.exclude": {
+    "**/.git": true,
+    "**/.next": true,
+    "**/node_modules": true,
+    "**/github.copilot-chat/**": true,
+    "**/.DS_Store": true
+  },
+
+  // --- [FUNCTIONAL BLOCK: EDITOR STRATEGY] ---
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+
+  // --- [FUNCTIONAL BLOCK: COPILOT CONTROL] ---
+  "github.copilot.chat.agent.enabled": false,
+  "chat.useAgentsMdFile": false,
+
+  // --- [FUNCTIONAL BLOCK: UI & LOOK] ---
+  "editor.minimap.enabled": true,
+  "editor.fontSize": 14,
+  "editor.lineHeight": 22
+}

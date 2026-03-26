@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 
 const NEWS_DATA = [
-  { id: 1, title: "AI in Echocardiography", description: "How machine learning is revolutionizing valve disease detection.", tag: "TECHNOLOGY" },
-  { id: 2, title: "Gene Therapy Trends", description: "The future of treating cardiomyopathy.", tag: "GENETICS" },
-  { id: 3, title: "Remote Monitoring", description: "Impact of wearable devices on recovery.", tag: "CLINICAL" },
+  { id: 1, title: "AI in Echocardiography", description: "How machine learning is revolutionizing valve disease detection.", tag: "BASICS" },
+  { id: 2, title: "Gene Therapy Trends", description: "The future of treating cardiomyopathy.", tag: "Clinical Cardiology " },
+  { id: 3, title: "Remote Monitoring", description: "Impact of wearable devices on recovery.", tag: "Future" },
 ];
 
 export default function LandingPage() {
@@ -93,8 +93,8 @@ export default function LandingPage() {
             <div className="h-1 w-full bg-[#E31E24] mt-1"></div>
           </div>
           <div className="hidden lg:flex flex-col items-center flex-1 mx-8 text-center leading-tight">
-             <h2 className="text-2xl font-black uppercase tracking-tight text-white leading-none">CARDIOLOGY ANALYSIS ACCORDING EVIDENCE BASED</h2>
-             <p className="text-xs uppercase tracking-widest font-bold text-red-100 opacity-95 italic mt-1 leading-none">- PhD Personalized Review -</p>
+             <h2 className="text-2xl font-black uppercase tracking-tight text-white leading-none">Science and Cardiology Analysis</h2>
+             <p className="text-xs uppercase tracking-widest font-bold text-red-100 opacity-95 italic mt-1 leading-none">An Expert Review of Evidence-Based, Personalized Medicine, and AI </p>
           </div>
         </div>
       </nav>
@@ -104,9 +104,9 @@ export default function LandingPage() {
         <div className="lg:col-span-3 flex flex-col gap-4">
             <motion.div onClick={scrollToForm} whileHover={{ y: -5 }} className="cursor-pointer bg-[#2E5481] p-6 rounded-[35px] text-white shadow-2xl flex flex-col justify-center text-center relative h-64 overflow-hidden border-b-4 border-blue-900">
               <h3 className="text-[#E31E24] text-4xl font-black italic mb-1 uppercase tracking-tighter shadow-black drop-shadow-md">SUBMIT</h3> 
-              <p className="text-[11px] font-black uppercase leading-tight mb-4 tracking-wider">YOUR CARDIOLOGY <br/> QUESTION/RESULTS/ <br/> DILEMMA...?</p>
+              <p className="text-[11px] font-black uppercase leading-tight mb-4 tracking-wider">Your Cardiology<br/>Questions,Results,<br/>Dilemmas...?</p>
               <div className="flex items-center justify-center gap-2">
-                <span className="text-[8px] font-black text-[#E31E24] uppercase italic">click to start</span>
+                <span className="text-[10px] font-black text-[#E31E24] uppercase italic">click to start</span>
                 <ArrowDown className="text-[#E31E24] animate-bounce" size={18} />
               </div>
             </motion.div>
@@ -120,7 +120,7 @@ export default function LandingPage() {
         <div className="lg:col-span-3 bg-white border border-slate-100 p-8 rounded-[35px] shadow-xl h-96 flex flex-col justify-center text-center relative overflow-hidden">
           <h3 className="text-xl font-black text-[#2E5481] uppercase border-b-4 border-[#E31E24] pb-1 inline-block tracking-tighter italic">HOW IT WORKS</h3>
           <div className="space-y-6 mt-6 text-left">
-            {[ {id: "01", t: "Your Request"}, {id: "02", t: "Our Analysis"}, {id: "03", t: "Your Answer"} ].map((step) => (
+            {[ {id: "1", t: "Your Requests"}, {id: "2", t: "Our Analysis"}, {id: "3", t: "Get Your Answers"} ].map((step) => (
               <div key={step.id} className="flex items-center gap-4 group">
                 <div className="w-1.5 h-10 bg-slate-100 rounded-full group-hover:bg-[#E31E24] transition-all"></div>
                 <span className="font-black text-xs uppercase tracking-widest text-slate-800">{step.id}. {step.t}</span>
@@ -164,7 +164,7 @@ export default function LandingPage() {
           <div className="bg-red-50 border-b border-red-100 p-4 flex items-center justify-center gap-4 text-center text-slate-900">
             <div className="bg-[#E31E24] text-white w-7 h-7 flex items-center justify-center rounded-full font-black text-xs shrink-0 animate-pulse">!</div>
             <p className="text-[#E31E24] font-black text-[10px] uppercase italic leading-tight tracking-tight">
-              Note: MedExNews does not provide medical diagnosis. If you have emergency, call 911 immediately!
+              Note: MedExNews does not provide MEDICAL ADVICES, DIAGNOSIS OR TREATMENT. If you think that you have emergency medical problem, ask your physician without any delay, call 911 or dial respective number in your country immediately!
             </p>
           </div>
 
@@ -234,7 +234,9 @@ export default function LandingPage() {
                 <label className="flex items-start gap-3 cursor-pointer group mb-6 leading-none">
                   <input required type="checkbox" checked={isAgreed} onChange={e => setIsAgreed(e.target.checked)} className="mt-1 w-4 h-4 rounded border-slate-300" />
                   <span className="text-[9px] font-bold text-slate-500 uppercase italic leading-tight text-left">
-                    By submitting you agree with <span className="text-[#2E5481] underline font-black italic">User Agreement</span>.
+                    By submitting this form you confirm that you are over 18 years old and 
+you agree with 
+ <span className="text-[#2E5481] underline font-black italic">Terms & Conditions, User Agreement, Notice to Readers and Terms of Payment</span>.
                   </span>
                 </label>
                 <button type="submit" disabled={status === 'loading'} className="w-full bg-[#E31E24] text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest hover:bg-red-700 transition-all text-sm italic">
@@ -282,7 +284,7 @@ export default function LandingPage() {
 </div>
 
 
-             <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-4 leading-none">© 2026 MedExNews | ALL RIGHTS RESERVED</p>
+             <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-4 leading-none">© 2026 MedExNews | ALL RIGHTS RESERVED  | MedExNews does not provide medical advices, diagnosis or treatment. See additional Information.</p>
           </div>
         </div>
       </footer>

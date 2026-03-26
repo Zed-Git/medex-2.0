@@ -1,148 +1,169 @@
 // src/app/api/send-email/route.ts
 
 // --- [FUNCTIONAL BLOCK: IMPORTS] ---
-// [ZLATNI STANDARD - NEW FILE]:
-// Core Next.js response helpers + Resend client
-import { NextRequest, NextResponse } from 'next/server';
+// [ZLATNI STANDARD: NextResponse + Resend]
+import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
-// --- [FUNCTIONAL BLOCK: RESEND INITIALIZATION] ---
-// [ZLATNI STANDARD - NEW]:
-// Initialize Resend with API key from environment
-const resend = new Resend(process.env.RESEND_API_KEY!);
+// --- [FUNCTIONAL BLOCK: RESEND INIT] ---
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// --- [FUNCTIONAL BLOCK: ENV CONFIG] ---
+// [ISPRAVKA: koristimo RESEND_FROM iz .env.local]
+const FROM_EMAIL =
+  process.env.RESEND_FROM || 'MedExNews AI <no-reply@yourdomain.com>';
+
+// [DODATO: admin email iz env, fallback na tvoj mail]
+const ADMIN_EMAIL =
+  process.env.ADMIN_NOTIFICATION_EMAIL || 'mdzdravko@yahoo.com';
+
+// --- [FUNCTIONAL BLOCK: TYPES] ---
+interface SendEmailPayload {
+  patientName?: string;
+  patientEmail?: string;
+  requestId?: number | string;
+  price?: string | number | null;
+  pdfUrl?: string | null;
+  status?: 'pending' | 'paid' | 'processing' | string;
+}
 
 // --- [FUNCTIONAL BLOCK: POST HANDLER] ---
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    // --- [FUNCTIONAL BLOCK: DATA EXTRACTION] ---
-    // [ZLATNI STANDARD - ROBUST PARSING]:
-    const body = await req.json();
+    const body = (await req.json()) as SendEmailPayload;
 
-    const requestId =
-      body.requestId ?? body.id ?? null;
-    const patientName =
-      body.patientName ?? body.patient_name ?? 'Unknown patient';
-    const patientEmail =
-      body.patientEmail ?? body.patient_email ?? null;
-    const price =
-      body.price ?? body.amount ?? null;
-    const pdfUrl =
-      body.pdfUrl ?? body.reportUrl ?? null;
+    const {
+      patientName,
+      patientEmail,
+      requestId,
+      price,
+      pdfUrl,
+      status,
+    } = body;
 
-    // --- [FUNCTIONAL BLOCK: VALIDATION] ---
-    if (!requestId) {
-      console.warn(
-        '[send-email] Missing requestId in payload. Email will still be attempted without it.'
-      );
-    }
+    console.log('[send-email] Incoming payload:', body);
+    console.log('[send-email] Using ADMIN_EMAIL:', ADMIN_EMAIL);
 
-    if (!patientEmail) {
-      console.warn(
-        '[send-email] Missing patientEmail in payload. Patient email will NOT be sent.'
-      );
-    }
-
-    // --- [FUNCTIONAL BLOCK: EMAIL PREPARATION] ---
-    const adminEmail = 'mdzdravko@gmail.com';
-    const fromAddress =
-      process.env.RESEND_FROM || 'Medex 2.0 <noreply@medexnews.com>';
-
-    const emailPromises: Promise<unknown>[] = [];
-
-    // --- [SUB-BLOCK: ADMIN NOTIFICATION EMAIL] ---
-    emailPromises.push(
-      resend.emails.send({
-        from: fromAddress,
-        to: adminEmail,
-        subject: 'Medex 2.0 – New clinical report notification',
-        html: `
-          <h2>New Clinical Report Notification</h2>
-          <p><strong>Patient:</strong> ${patientName}</p>
-          ${
-            requestId
-              ? `<p><strong>Request ID:</strong> ${requestId}</p>`
-              : `<p><strong>Request ID:</strong> Not provided</p>`
-          }
-          ${
-            price
-              ? `<p><strong>Price:</strong> $${price}</p>`
-              : `<p><strong>Price:</strong> Not provided</p>`
-          }
-          ${
-            pdfUrl
-              ? `<p><strong>Report URL:</strong> ${pdfUrl}</p>`
-              : `<p><strong>Report URL:</strong> Not provided</p>`
-          }
-          <p>You can review this request in your Medex 2.0 admin panel.</p>
-        `,
-      })
-    );
-
-    // --- [SUB-BLOCK: PATIENT CONFIRMATION EMAIL] ---
-    if (patientEmail) {
-      emailPromises.push(
-        resend.emails.send({
-          from: fromAddress,
-          to: patientEmail,
-          subject: 'Your Medex 2.0 clinical report notification',
-          html: `
-            <h2>Thank you for using Medex 2.0</h2>
-            <p>Dear ${patientName},</p>
-            <p>Your clinical report is being processed.</p>
-            ${
-              requestId
-                ? `<p><strong>Request ID:</strong> ${requestId}</p>`
-                : ''
-            }
-            ${
-              price
-                ? `<p><strong>Service amount:</strong> $${price}</p>`
-                : ''
-            }
-            ${
-              pdfUrl
-                ? `<p>You will receive a secure link to your final report once it is ready.</p>`
-                : `<p>You will be notified when your final report is ready.</p>`
-            }
-            <p>Best regards,<br/>Medex 2.0 Team</p>
-          `,
-        })
-      );
-    }
-
-    // --- [FUNCTIONAL BLOCK: EMAIL SENDING] ---
-    try {
-      await Promise.all(emailPromises);
-      console.log('[send-email] Email notifications sent successfully.');
-    } catch (emailError) {
-      console.error('[send-email] Email sending error:', emailError);
-      // We DO NOT throw here – we still return 200 to avoid "Critical Error" popup.
-    }
-
-    // --- [FUNCTIONAL BLOCK: SUCCESS RESPONSE] ---
-    // [ZLATNI STANDARD - STABLE FRONTEND CONTRACT]:
-    return NextResponse.json({ success: true });
-
-  } catch (err: unknown) {
-    // --- [FUNCTIONAL BLOCK: GLOBAL ERROR HANDLING] ---
-    // [FIXED - REPLACED any → unknown + safe narrowing]
-    if (err instanceof Error) {
-      console.error('[send-email] Critical server error:', err);
+    if (!patientName || !patientEmail) {
+      console.error('[send-email] Missing required fields:', {
+        patientName,
+        patientEmail,
+        requestId,
+      });
       return NextResponse.json(
-        {
-          error: 'Email notification system error',
-          details: err.message,
-        },
-        { status: 500 }
+        { error: 'Missing required fields for email (name/email).' },
+        { status: 400 }
       );
     }
 
-    console.error('[send-email] Critical server error (non-Error):', err);
+    const isFinalReport = !!pdfUrl;
+    const safeRequestId = requestId ?? 'N/A';
+
+    const subjectPatient = isFinalReport
+      ? `Your MedExNews AI Final Report #${safeRequestId}`
+      : `Your MedExNews AI Request #${safeRequestId} is being processed`;
+
+    const subjectAdmin = isFinalReport
+      ? `FINAL REPORT READY #${safeRequestId} - ${patientName}`
+      : `NEW REQUEST RECEIVED #${safeRequestId} - ${patientName}`;
+
+    const priceText =
+      price !== undefined && price !== null && price !== ''
+        ? `$${price}`
+        : 'N/A';
+
+    const patientBody = isFinalReport
+      ? `
+Dear ${patientName},
+
+Your cardiology analysis report is now ready.
+
+You can download your report here:
+${pdfUrl}
+
+Request ID: ${safeRequestId}
+Estimated fee: ${priceText}
+
+Best regards,
+MedExNews AI Team
+      `.trim()
+      : `
+Dear ${patientName},
+
+Thank you for submitting your medical data.
+
+Your request has been received and is now being reviewed.
+
+Request ID: ${safeRequestId}
+Estimated fee: ${priceText}
+
+Best regards,
+MedExNews AI Team
+      `.trim();
+
+    const adminBody = isFinalReport
+      ? `
+ADMIN NOTICE - FINAL REPORT READY
+
+Request ID: ${safeRequestId}
+Patient: ${patientName}
+Patient Email: ${patientEmail}
+Status: ${status || 'paid'}
+Estimated fee: ${priceText}
+
+Final PDF URL:
+${pdfUrl}
+      `.trim()
+      : `
+ADMIN NOTICE - NEW REQUEST RECEIVED
+
+Request ID: ${safeRequestId}
+Patient: ${patientName}
+Patient Email: ${patientEmail}
+Status: ${status || 'pending'}
+Estimated fee: ${priceText}
+      `.trim();
+
+    // --- [SEND TO PATIENT] ---
+    try {
+      console.log('[send-email] Sending PATIENT email to:', patientEmail);
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: patientEmail,
+        subject: subjectPatient,
+        text: patientBody,
+      });
+      console.log('[send-email] Patient email sent successfully.');
+    } catch (err) {
+      console.error('[send-email] Error sending patient email:', err);
+    }
+
+    // --- [SEND TO ADMIN] ---
+    try {
+      console.log('[send-email] Sending ADMIN email to:', ADMIN_EMAIL);
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: ADMIN_EMAIL,
+        subject: subjectAdmin,
+        text: adminBody,
+      });
+      console.log('[send-email] Admin email sent successfully.');
+    } catch (err) {
+      console.error('[send-email] Error sending admin email:', err);
+    }
+
     return NextResponse.json(
       {
-        error: 'Email notification system error',
-        details: 'Unknown error',
+        success: true,
+        mode: isFinalReport ? 'final-report' : 'processing',
+        message: 'Emails processed (patient + admin).',
       },
+      { status: 200 }
+    );
+  } catch (err) {
+    console.error('[send-email] Critical error:', err);
+    return NextResponse.json(
+      { error: 'Server error in send-email.' },
       { status: 500 }
     );
   }
