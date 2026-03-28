@@ -1,6 +1,19 @@
 "use server";
 
+// =============================================================================
+// [DODATO vs Zlatni Standard] — prvi e-mail (pacijent + admin) sa landing forme
+// =============================================================================
+// Problem: Dugme "SEND FOR EXPERT ANALYSIS" na početnoj (page.tsx) pozivalo je samo
+// ovu server akciju koja radi INSERT u Supabase. Nije postojao poziv ka Resend-u,
+// za razliku od /api/request-analysis. Zato je "prvi mejl" izostajao dok je drugi
+// (admin panel / webhook) i dalje radio.
+// Rešenje: Nakon uspešnog INSERT-a, pozovemo sendRequestSubmissionEmails iz
+// @/lib/email-service (isti tok kao API ruta). Greška mejla ne sme da poništi uspeh
+// forme — zahtev je već u bazi.
+// =============================================================================
+
 import { supabase } from "@/lib/supabase";
+import { sendRequestSubmissionEmails } from "@/lib/email-service";
 
 // -------------------------------
 //  SUBMIT MEDICAL REQUEST
@@ -72,6 +85,48 @@ THERAPY: ${anamnesis.therapy || 'N/A'}
     if (error) {
       console.error("Supabase INSERT error:", error);
       return { success: false, error: error.message };
+    }
+
+    // --- [FUNCTIONAL BLOCK: FIRST E-MAIL — PATIENT + ADMIN (RESEND)] ---
+    if (data && typeof data === "object" && "id" in data) {
+      const row = data as { id: number | string };
+      try {
+        const { data: pricingRow } = await supabase
+          .from("site_config")
+          .select("value")
+          .eq("key", "pricing")
+          .single();
+
+        const pv = pricingRow?.value as
+          | { normal?: string; priority?: string }
+          | undefined;
+        const normal = pv?.normal?.trim() ?? "";
+        const priority = pv?.priority?.trim() ?? "";
+        const priceDisplay =
+          urgency === "Extended"
+            ? priority
+              ? `$${priority} USD (extended review)`
+              : "Extended review (fee from site configuration)"
+            : normal
+              ? `$${normal} USD (basic review)`
+              : "Basic review (fee from site configuration)";
+
+        const emailOutcome = await sendRequestSubmissionEmails({
+          patientName: patientName ?? "",
+          patientEmail: (email ?? "").trim() ? String(email).trim() : null,
+          requestId: row.id,
+          priceDisplay,
+        });
+        console.log(
+          "[submitMedicalRequest] First e-mail batch:",
+          JSON.stringify(emailOutcome),
+        );
+      } catch (emailErr: unknown) {
+        console.error(
+          "[submitMedicalRequest] First e-mail failed (non-fatal):",
+          emailErr,
+        );
+      }
     }
 
     return { success: true, data };

@@ -146,17 +146,35 @@ export default function AdminDashboard() {
       if (dbError) throw dbError;
 
       // 2. Dispatch Email via Internal API
+      // [DODATO vs Zlatni Standard samo u payload-u] `requestId` mora postojati da bi
+      // `email-service` znao koji je slučaj; `reportId` ostaje radi čitljivosti u logovima.
       const emailRes = await fetch('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patientEmail: selectedPatient.patient_email,
           patientName: selectedPatient.patient_name,
-          reportId: `REP-${selectedPatient.id}` 
+          requestId: selectedPatient.id,
+          reportId: `REP-${selectedPatient.id}`,
         }),
       });
 
-      if (!emailRes.ok) throw new Error("Email notification system error.");
+      if (!emailRes.ok) {
+        const errJson: unknown = await emailRes.json().catch(() => null);
+        let detail = `HTTP ${emailRes.status}`;
+        if (errJson && typeof errJson === "object") {
+          const o = errJson as {
+            details?: unknown;
+            error?: unknown;
+          };
+          if (typeof o.details === "string" && o.details.trim()) {
+            detail = o.details;
+          } else if (typeof o.error === "string") {
+            detail = o.error;
+          }
+        }
+        throw new Error(`Email notification failed: ${detail}`);
+      }
 
       alert("Clinical report finalized and email notification sent!");
       setSelectedPatient(null);

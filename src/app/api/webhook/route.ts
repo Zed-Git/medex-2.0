@@ -1,5 +1,14 @@
 // src/app/api/webhook/route.ts
 
+// =============================================================================
+// CHANGE VS PREVIOUS GOLDEN STANDARD (E-MAIL PORTION)
+// =============================================================================
+// Before: After uploading the PDF, the webhook called `fetch(BASE_URL + '/api/send-email')`.
+// Same reliability issue as `request-analysis` when BASE_URL was wrong or self-calls failed.
+// After: `sendFinalPdfReportEmails` from `@/lib/email-service` sends via Resend in-process.
+// Stripe `headers()` usage remains `await headers()` for Next.js 15+ dynamic API compliance.
+// =============================================================================
+
 // --- [FUNCTIONAL BLOCK: IMPORTS] ---
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
@@ -7,7 +16,10 @@ import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import { renderToBuffer } from '@react-pdf/renderer';
 import React from 'react';
-import MedicalReportPDF from '@/components/MedicalReportPDF';
+import MedicalReportPDF, {
+  type MedicalReportPDFProps,
+} from '@/components/MedicalReportPDF';
+import { sendFinalPdfReportEmails } from '@/lib/email-service';
 
 // --- [FUNCTIONAL BLOCK: TYPES] ---
 interface PatientRequestRow {
@@ -24,29 +36,10 @@ interface PatientRequestRow {
   analysis_pdf_url?: string | null;
 }
 
-// Tipovi za PDF komponentu - Anatomija dokumenta
-interface PDFProps {
-  patient: {
-    patient_name: string;
-    patient_email: string;
-    medical_note: string;
-    created_at: string;
-  };
-  analysis: string;
-  recommendation: string;
-  references: string;
-  mode: 'final' | 'draft';
-}
-
 // --- [FUNCTIONAL BLOCK: STRIPE INIT] ---
+// apiVersion must match the literal union shipped with the installed `stripe` package.
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  /* 
-     [FIX]: Brisanje Error 1 (Stripe Config).
-     Problem: Namespace 'Stripe' više ne izvozi 'Config' na taj način.
-     Rešenje: Koristimo 'as any' sa ESLint ignorisanjem. U svetu programiranja, 
-     ovo je 'bypass' koji koristimo kada se verzije biblioteka ne poklapaju u tipovima.
-  */
-  apiVersion: '2025-01-27.acacia' as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  apiVersion: '2026-02-25.clover',
 });
 
 // --- [FUNCTIONAL BLOCK: SUPABASE INIT] ---
@@ -110,27 +103,23 @@ export async function POST(req: Request) {
     let finalPdfUrl: string | null = null;
 
     try {
-      // Pravimo React element koristeći našu PDF komponentu
-      const finalDocument = React.createElement(MedicalReportPDF as React.FC<PDFProps>, {
+      const pdfProps: MedicalReportPDFProps = {
         patient: {
           patient_name: typedRow.patient_name ?? '',
-          patient_email: typedRow.patient_email ?? '',
-          medical_note: typedRow.medical_note ?? '',
           created_at: typedRow.created_at ?? '',
+          medical_note: typedRow.medical_note ?? '',
         },
         analysis: typedRow.analysis ?? 'No analysis provided.',
         recommendation: typedRow.recommendation ?? 'No recommendations provided.',
         references: typedRow.references ?? 'No references provided.',
         mode: 'final',
-      });
+      };
 
-      /* 
-         [FIX]: Brisanje Error 2 (PDF Type Mismatch).
-         Problem: 'renderToBuffer' očekuje poseban PDF format, a React vraća opšti element.
-         Rešenje: Kastujemo 'finalDocument' u 'any'. To je kao da kažemo sistemu: 
-         "Veruj mi, ovo je ispravan organ za transplantaciju, iako se krvne grupe na papiru ne slažu."
-      */
-      const pdfBuffer = await renderToBuffer(finalDocument as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+      const finalDocument = React.createElement(MedicalReportPDF, pdfProps);
+
+      const pdfBuffer = await renderToBuffer(
+        finalDocument as Parameters<typeof renderToBuffer>[0],
+      );
 
       const finalPath = `reports/final/request-${requestId}.pdf`;
 
@@ -163,25 +152,23 @@ export async function POST(req: Request) {
       })
       .eq('id', requestId);
 
-    // --- [SUB-BLOCK: SEND FINAL REPORT EMAIL] ---
+    // --- [SUB-BLOCK: SEND FINAL REPORT E-MAIL (RESEND, IN-PROCESS)] ---
     if (finalPdfUrl) {
       try {
-        await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/send-email`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            patientName: typedRow.patient_name,
-            patientEmail: typedRow.patient_email,
-            requestId,
-            price: session.amount_total
-              ? (session.amount_total / 100).toFixed(2)
-              : '',
-            pdfUrl: finalPdfUrl,
-            status: 'paid',
-          }),
+        const amountUsd =
+          session.amount_total != null
+            ? `${(session.amount_total / 100).toFixed(2)} USD`
+            : 'Amount not available';
+        const emailOutcome = await sendFinalPdfReportEmails({
+          patientName: typedRow.patient_name ?? 'Patient',
+          patientEmail: typedRow.patient_email,
+          requestId,
+          priceDisplay: amountUsd,
+          pdfUrl: finalPdfUrl,
         });
+        console.log('📧 Final report e-mail outcome:', JSON.stringify(emailOutcome));
       } catch (err: unknown) {
-        console.error('❌ Email error:', err);
+        console.error('❌ E-mail dispatch error:', err);
       }
     }
   }

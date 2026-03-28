@@ -3,7 +3,7 @@
 'use client';
 
 // --- [FUNCTIONAL BLOCK: IMPORTS] ---
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
@@ -20,7 +20,7 @@ type PatientRequest = {
 };
 
 // --- [FUNCTIONAL BLOCK: COMPONENT STATE] ---
-export default function SuccessPage() {
+function SuccessPageContent() {
   const searchParams = useSearchParams();
   const requestId = searchParams.get('id');
 
@@ -248,4 +248,17 @@ export default function SuccessPage() {
   );
 }
 
-
+// Next.js 15+: `useSearchParams()` must be under `<Suspense>` for static generation.
+export default function SuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center bg-slate-50">
+          <p className="text-slate-600 text-sm">Loading…</p>
+        </main>
+      }
+    >
+      <SuccessPageContent />
+    </Suspense>
+  );
+}
