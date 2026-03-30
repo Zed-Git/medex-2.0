@@ -3,7 +3,7 @@
 'use client';
 
 // --- [FUNCTIONAL BLOCK: IMPORTS] ---
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
@@ -29,9 +29,8 @@ function SuccessPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [request, setRequest] = useState<PatientRequest | null>(null);
-  // --- [DODATO — Stripe Checkout] State for “Proceed to secure payment” ---
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  /** Transparentni sloj iznad PDF preview-a pre uplate — blokira skrol i klik (Download). */
+  const previewBlockerRef = useRef<HTMLDivElement>(null);
 
   // --- [FUNCTIONAL BLOCK: DATA FETCHING] ---
   useEffect(() => {
@@ -110,6 +109,26 @@ function SuccessPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [requestId, request?.status]);
 
+  // [DODATO vs Zlatni standard] Pre uplate: transparentni sloj hvata wheel/touch; passive:false je
+  // neophodan da preventDefault stvarno zaustavi skrolovanje unutar ugrađenog PDF pregledača.
+  useLayoutEffect(() => {
+    if (!request || request.status === 'paid' || !request.analysis_preview_url) {
+      return;
+    }
+    const el = previewBlockerRef.current;
+    if (!el) return;
+    const blockScrollAndPassThrough = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    el.addEventListener('wheel', blockScrollAndPassThrough, { passive: false });
+    el.addEventListener('touchmove', blockScrollAndPassThrough, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', blockScrollAndPassThrough);
+      el.removeEventListener('touchmove', blockScrollAndPassThrough);
+    };
+  }, [request]);
+
   // --- [FUNCTIONAL BLOCK: LOADING & ERROR STATES] ---
   if (loading) {
     return (
@@ -151,10 +170,6 @@ function SuccessPageContent() {
   const isPaid = request.status === 'paid';
   const hasPreview = !!request.analysis_preview_url;
   const hasFullPdf = !!request.analysis_pdf_url;
-  const priceNumber =
-    request.price === null || request.price === undefined
-      ? NaN
-      : Number(request.price);
   // [IZMENA 2026] Plaćanje tek nakon što ekspert završi izveštaj (finalize-expert-report):
   // status `completed` i/ili uploadovan preview PDF. Do tada samo poruka — nema Stripe dugmeta.
   const waitingForExpert =
@@ -164,45 +179,7 @@ function SuccessPageContent() {
   const canStartCheckout =
     !isPaid && (request.status === 'completed' || hasPreview);
 
-  // --- [FUNCTIONAL BLOCK: STRIPE CHECKOUT HANDLER] ---
-  // Creates a Checkout Session on the server and redirects the browser to Stripe-hosted payment.
-  async function handleStripeCheckout() {
-    if (!request || isPaid) return;
-    setCheckoutLoading(true);
-    setCheckoutError(null);
-    try {
-      const checkoutBody: Record<string, unknown> = {
-        requestId: request.id,
-        patientName: request.patient_name?.trim() || 'Patient',
-        patientEmail: request.patient_email?.trim() || null,
-      };
-      if (Number.isFinite(priceNumber) && priceNumber > 0) {
-        checkoutBody.price = priceNumber;
-      }
-      const res = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(checkoutBody),
-      });
-      const data: unknown = await res.json();
-      const payload = data as { url?: string; error?: string; details?: string };
-      if (!res.ok) {
-        throw new Error(
-          payload.details || payload.error || `Checkout failed (${res.status})`,
-        );
-      }
-      if (!payload.url) {
-        throw new Error('No checkout URL returned from server.');
-      }
-      window.location.href = payload.url;
-    } catch (e: unknown) {
-      const msg =
-        e instanceof Error ? e.message : 'Unable to start secure checkout.';
-      setCheckoutError(msg);
-    } finally {
-      setCheckoutLoading(false);
-    }
-  }
+  // [IZMENA vs Zlatni standard] Plaćanje ide na /pay (Embedded Stripe + isti vizuelni omotač kao landing).
 
   // --- [FUNCTIONAL BLOCK: MAIN SUCCESS UI] ---
   return (
@@ -296,18 +273,17 @@ function SuccessPageContent() {
 
           {hasPreview ? (
             <div className="space-y-2">
-              {/* [IZMENA od „Zlatnog standarda“ — mart 2026]
-                  Ranije: sandbox na iframe-u → PDF u Safari/Chrome često ostane PRAZAN.
-                  Sada: sandbox se NE koristi (PDF se ponovo vidi). Umesto toga, pre uplate:
-                  (1) spoljašnji kontejner seče prikaz (overflow + fiksna max visina) — vidljiv je samo GORNJI DEO;
-                  (2) pointer-events-none na iframe — nema skrolovanja unutra do celog dokumenta i teže je kliknuti toolbar „Download“.
-                  Posle uplate: običan iframe pune visine, normalna interakcija; puni fajl i dalje samo preko sekcije Download. */}
+              {/* [IZMENA od „Zlatnog standarda“ — mart 2026 + dopuna]
+                  Pre uplate: (1) sečen prikaz; (2) PUN transparentni sloj iznad iframe-a (z-20) blokira
+                  klik na „Download“ u PDF toolbar-u i skrolovanje; (3) useLayoutEffect + wheel/touchmove
+                  sa passive:false za browsere gde je potrebno. Posle uplate: normalan iframe.
+                  Pun download i dalje SAMO u sekciji „Download full analysis“ kada je paid. */}
               {!isPaid && (
                 <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                  On-screen preview only: only the first part of the report is
-                  shown here. Full scrolling and download are available after
-                  your payment is complete. Your complete PDF will be
-                  available below once payment is confirmed.
+                  On-screen preview only: a fixed portion of the report is shown.
+                  Scrolling and saving the preview are disabled until your payment
+                  is complete. Your full PDF download will unlock below after
+                  payment is confirmed.
                 </p>
               )}
               <div
@@ -317,21 +293,31 @@ function SuccessPageContent() {
                     : 'overflow-hidden rounded-md border bg-slate-100'
                 }
               >
-                {!isPaid && (
-                  <div
-                    className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-16 bg-linear-to-t from-slate-100 to-transparent"
-                    aria-hidden
-                  />
-                )}
                 <iframe
                   src={request.analysis_preview_url || ''}
                   className={
                     !isPaid
-                      ? 'block h-[min(36rem,75vh)] w-full border-0 pointer-events-none select-none'
+                      ? 'relative z-0 block h-[min(36rem,75vh)] w-full border-0'
                       : 'h-96 w-full border-0'
                   }
                   title="Analysis preview"
+                  tabIndex={!isPaid ? -1 : undefined}
                 />
+                {!isPaid && (
+                  <>
+                    <div
+                      className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-16 bg-linear-to-t from-slate-100 to-transparent"
+                      aria-hidden
+                    />
+                    <div
+                      ref={previewBlockerRef}
+                      role="presentation"
+                      className="absolute inset-0 z-20 cursor-default touch-none select-none bg-transparent"
+                      aria-hidden
+                      onContextMenu={(e) => e.preventDefault()}
+                    />
+                  </>
+                )}
               </div>
             </div>
           ) : (
@@ -357,24 +343,19 @@ function SuccessPageContent() {
                     After payment is confirmed, the download button will appear
                     below.
                   </p>
-                  {checkoutError && (
-                    <p className="text-sm text-red-700 font-medium">{checkoutError}</p>
-                  )}
                   {canStartCheckout && (
-                    <button
-                      type="button"
-                      onClick={handleStripeCheckout}
-                      disabled={checkoutLoading}
-                      className="inline-flex w-full sm:w-auto items-center justify-center rounded-md bg-[#2E5481] px-5 py-3 text-sm font-semibold text-white shadow hover:bg-[#1e3a5f] disabled:opacity-60 disabled:pointer-events-none"
+                    <Link
+                      href={`/pay?requestId=${encodeURIComponent(String(request.id))}`}
+                      className="inline-flex w-full sm:w-auto items-center justify-center rounded-md bg-[#2E5481] px-5 py-3 text-sm font-semibold text-white shadow hover:bg-[#1e3a5f]"
                     >
-                      {checkoutLoading
-                        ? 'Redirecting to secure payment…'
-                        : 'Proceed to secure payment (Stripe)'}
-                    </button>
+                      Proceed to secure payment (Stripe)
+                    </Link>
                   )}
                   <p className="text-xs text-amber-800/90">
-                    You will complete payment on Stripe&apos;s secure page. You can
-                    return to this report using the same link if you cancel.
+                    Payment opens on a MedExNews-branded page (same header and
+                    background as our main site), then continues through
+                    Stripe&apos;s secure checkout. You can return to this report
+                    using the same link if you cancel.
                   </p>
                 </>
               )}

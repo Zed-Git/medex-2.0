@@ -19,6 +19,13 @@ function stripLegacyPhdHeader(note: string): string {
   );
 }
 
+function previewExcerpt(text: string | undefined, maxChars: number): string {
+  const t = (text ?? '').trim();
+  if (!t) return 'N/A';
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, maxChars).trimEnd()}…`;
+}
+
 // --- [FUNCTIONAL BLOCK: PROPS INTERFACE] ---
 // [DODATO vs stariji layout: tipovi za integration sa webhook-om i backendom]
 // Ovo omogućava da backend (webhook) precizno prosledi podatke u PDF komponentu.
@@ -133,7 +140,16 @@ const MedicalReportPDF = ({
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>B) EXPERT CLINICAL FINDINGS & ANALYSIS</Text>
         <View style={styles.contentBox}>
-          <Text>{analysis || 'N/A'}</Text>
+          {mode === 'preview' ? (
+            <>
+              <Text>{previewExcerpt(analysis, 900)}</Text>
+              <Text style={{ fontSize: 9, marginTop: 8, color: '#E31E24', fontWeight: 'bold' }}>
+                LOCKED: Full findings unlock after payment.
+              </Text>
+            </>
+          ) : (
+            <Text>{analysis || 'N/A'}</Text>
+          )}
         </View>
       </View>
 
@@ -142,7 +158,9 @@ const MedicalReportPDF = ({
         <Text style={styles.sectionTitle}>C) CONCLUSIONS</Text>
         <View style={styles.conclusionBox}>
           <Text style={{ fontSize: 10, lineHeight: 1.5 }}>
-            {recommendation || 'N/A'}
+            {mode === 'preview'
+              ? 'LOCKED: Conclusions unlock after payment.'
+              : recommendation || 'N/A'}
           </Text>
         </View>
       </View>
@@ -155,7 +173,11 @@ const MedicalReportPDF = ({
         </Text>
         <View style={styles.contentBox}>
           <Text style={{ fontSize: 8 }}>
-            {references?.trim() ? references.trim() : 'N/A'}
+            {mode === 'preview'
+              ? 'LOCKED: References unlock after payment.'
+              : references?.trim()
+                ? references.trim()
+                : 'N/A'}
           </Text>
         </View>
       </View>
@@ -163,12 +185,13 @@ const MedicalReportPDF = ({
       {/* --- [SUB-BLOCK: FOOTER + NOTE] --- */}
       {/* Note iznad linije + legal disclaimer u dnu stranice */}
       <View style={styles.footerContainer}>
-        {/* [IZMENA vs Zlatni standard] Jača medicinsko-pravna formulacija na engleskom. */}
+        {/* [IZMENA vs Zlatni standard] Footer WARNING kao u referentnom PDF-u. */}
         <Text style={styles.noteAboveLine}>
-          Note:{' '}
+          WARNING:{' '}
           <Text style={{ color: '#2E5481' }}>
-            Before any further treatment, you must show this report to your
-            doctor and review it with them in consultation.
+            This report must be presented to a qualified medical practitioner
+            for clinical evaluation prior to the initiation of any treatment or
+            diagnostic procedures!
           </Text>
         </Text>
         <View style={styles.footerLine}>

@@ -72,38 +72,44 @@ export async function POST(request: Request) {
     const base = getNextAppPublicUrl();
     const idParam = encodeURIComponent(String(requestId));
 
-    // --- [FUNCTIONAL BLOCK: STRIPE CHECKOUT SESSION] ---
-    const session = await getStripe().checkout.sessions.create({
-      payment_method_types: ["card"],
-      ...(typeof patientEmail === "string" && patientEmail.trim()
-        ? { customer_email: patientEmail.trim() }
-        : {}),
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: "PhD Cardiology Analysis Report",
-              description: `Clinical expert review — ${patientName.trim()}`,
+    // --- [FUNCTIONAL BLOCK: STRIPE CHECKOUT SESSION — EMBEDDED] ---
+    // [IZMENA vs Zlatni standard] ui_mode: embedded — forma plaćanja na našem sajtu
+    // (PaymentFlowShell: medback1.webp + header/footer). return_url vodi nazad na /success.
+    // idempotencyKey sprečava duplu sesiju pri React Strict Mode / dvostrukom pozivu.
+    const session = await getStripe().checkout.sessions.create(
+      {
+        ui_mode: "embedded",
+        payment_method_types: ["card"],
+        ...(typeof patientEmail === "string" && patientEmail.trim()
+          ? { customer_email: patientEmail.trim() }
+          : {}),
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: "PhD Cardiology Analysis Report",
+                description: `Clinical expert review — ${patientName.trim()}`,
+              },
+              unit_amount: Math.round(price * 100),
             },
-            unit_amount: Math.round(price * 100),
+            quantity: 1,
           },
-          quantity: 1,
+        ],
+        mode: "payment",
+        return_url: `${base}/success?id=${idParam}&session_id={CHECKOUT_SESSION_ID}`,
+        metadata: {
+          requestId: String(requestId),
+          category: "Cardiology_PhD_Report",
         },
-      ],
-      mode: "payment",
-      success_url: `${base}/success?id=${idParam}`,
-      cancel_url: `${base}/success?id=${idParam}`,
-      metadata: {
-        requestId: String(requestId),
-        category: "Cardiology_PhD_Report",
       },
-    });
+      { idempotencyKey: `medex-embedded-checkout-${String(requestId)}` },
+    );
 
-    if (!session.url) {
-      console.error("[checkout] Stripe returned no session.url");
+    if (!session.client_secret) {
+      console.error("[checkout] Stripe returned no client_secret (embedded)");
       return NextResponse.json(
-        { error: "Stripe did not return a checkout URL" },
+        { error: "Stripe did not return embedded checkout credentials" },
         { status: 500 },
       );
     }
@@ -121,7 +127,7 @@ export async function POST(request: Request) {
       console.error("[checkout] Checkout notification e-mail error (non-fatal):", emailErr);
     }
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ clientSecret: session.client_secret });
   } catch (err: unknown) {
     if (err instanceof Error) {
       console.error("[checkout] Critical error:", err);
