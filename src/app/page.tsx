@@ -10,7 +10,7 @@ import { FileUpload } from "@/components/FileUpload";
 import RequestAnalysisForm, { AnamnesisData } from "@/components/RequestAnalysisForm";
 import { 
   ArrowDown, CheckCircle2, ShieldCheck, Activity, 
-  ArrowRight, X 
+  ArrowRight, X, AlertCircle
 } from "lucide-react";
 
 const NEWS_DATA = [
@@ -30,6 +30,8 @@ export default function LandingPage() {
 
   const formRef = useRef<HTMLDivElement>(null);
   const [dbPrices, setDbPrices] = useState({ normal: '15', priority: '30' });
+  // --- [DODATO] Surface server/validation errors (previously status was 'error' with no UI) ---
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -47,14 +49,60 @@ export default function LandingPage() {
     if (!isAgreed) { alert("Please confirm agreement."); return; }
     
     setStatus('loading');
+    setSubmitError(null);
     formData.append('medicalAnamnesis', JSON.stringify(anamnezaData));
     if (file) formData.append('medicalFile', file);
 
     try {
       const result = await submitMedicalRequest(formData);
-      if (result.success) setStatus('success');
-      else setStatus('error');
-    } catch { setStatus('error'); }
+      if (result.success) {
+        setStatus('success');
+      } else {
+        setStatus('error');
+        setSubmitError(
+          "error" in result && typeof result.error === "string"
+            ? result.error
+            : "Your request could not be saved. Please try again.",
+        );
+      }
+    } catch {
+      setStatus('error');
+      setSubmitError(
+        "A network error occurred. Please check your connection and try again.",
+      );
+    }
+  }
+
+  // --- [DODATO — jasna povratna informacija ako INSERT / upload ne uspe] ---
+  if (status === 'error') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6 text-center text-slate-900 font-sans">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="bg-white p-12 rounded-[40px] shadow-2xl border-t-8 border-red-500 max-w-lg"
+        >
+          <AlertCircle className="w-20 h-20 text-red-500 mx-auto mb-6" />
+          <h1 className="text-2xl font-black text-[#2E5481] uppercase tracking-tighter italic">
+            Submission unsuccessful
+          </h1>
+          <p className="text-slate-600 text-sm mt-4 leading-relaxed">
+            {submitError ||
+              "We could not save your request. Please verify your information and try again."}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setStatus("idle");
+              setSubmitError(null);
+            }}
+            className="mt-10 px-10 py-4 bg-[#2E5481] text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-900 transition-all shadow-lg"
+          >
+            Return to form
+          </button>
+        </motion.div>
+      </div>
+    );
   }
 
   // --- [ZLATNI STANDARD] RESTAURIRAN SUCCESS PORUKA ---

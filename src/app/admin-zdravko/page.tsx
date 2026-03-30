@@ -141,21 +141,16 @@ export default function AdminDashboard() {
     if (!selectedPatient) return;
     setIsSending(true);
     try {
-      // 1. Update Database Status to 'completed'
-      const { error: dbError } = await supabase.from("patient_requests").update({ status: 'completed' }).eq('id', selectedPatient.id);
-      if (dbError) throw dbError;
-
-      // 2. Dispatch Email via Internal API
-      // [DODATO vs Zlatni Standard samo u payload-u] `requestId` mora postojati da bi
-      // `email-service` znao koji je slučaj; `reportId` ostaje radi čitljivosti u logovima.
-      const emailRes = await fetch('/api/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      // [IZMENA 2026] Server čuva ekspertni tekst, generiše preview PDF, šalje DRUGI mejl pacijentu
+      // (link ka /success + plaćanje). Prvi mejl ostaje samo potvrda prijema — bez plaćanja.
+      const emailRes = await fetch("/api/finalize-expert-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          patientEmail: selectedPatient.patient_email,
-          patientName: selectedPatient.patient_name,
           requestId: selectedPatient.id,
-          reportId: `REP-${selectedPatient.id}`,
+          analysis,
+          recommendation,
+          references,
         }),
       });
 
@@ -173,7 +168,7 @@ export default function AdminDashboard() {
             detail = o.error;
           }
         }
-        throw new Error(`Email notification failed: ${detail}`);
+        throw new Error(`Finalize report failed: ${detail}`);
       }
 
       alert("Clinical report finalized and email notification sent!");

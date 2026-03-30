@@ -12,8 +12,9 @@
 // --- [FUNCTIONAL BLOCK: IMPORTS] ---
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import Stripe from 'stripe';
+import type Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+import { getStripe, resolveStripeWebhookSecret } from '@/lib/stripe-server';
 import { renderToBuffer } from '@react-pdf/renderer';
 import React from 'react';
 import MedicalReportPDF, {
@@ -36,17 +37,20 @@ interface PatientRequestRow {
   analysis_pdf_url?: string | null;
 }
 
-// --- [FUNCTIONAL BLOCK: STRIPE INIT] ---
-// apiVersion must match the literal union shipped with the installed `stripe` package.
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-02-25.clover',
-});
+// --- [FUNCTIONAL BLOCK: STRIPE] ---
+// [DODATO vs Zlatni Standard] getStripe() + resolveStripeWebhookSecret() omogućavaju
+// test mod (STRIPE_TEST_SECRET_KEY + STRIPE_WEBHOOK_SECRET_TEST sa `stripe listen`).
 
 // --- [FUNCTIONAL BLOCK: SUPABASE INIT] ---
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+// [DODATO / ISPRAVKA vs raniji webhook] Finalni PDF mora ići u isti Storage bucket kao pacijentovi fajlovi
+// (`medical-files` u `actions.ts`). Bucket `reports` često ne postoji u Supabase projektu — upload je
+// ćutao (uploadError), `finalPdfUrl` ostajao null i kolona `analysis_pdf_url` uvek NULL uprkos uspešnom plaćanju.
+const FINAL_PDF_STORAGE_BUCKET = "medical-files";
 
 // --- [FUNCTIONAL BLOCK: POST HANDLER] ---
 export async function POST(req: Request) {
@@ -62,10 +66,10 @@ export async function POST(req: Request) {
   let event: Stripe.Event;
 
   try {
-    event = stripe.webhooks.constructEvent(
+    event = getStripe().webhooks.constructEvent(
       body,
       signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
+      resolveStripeWebhookSecret(),
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -83,13 +87,19 @@ export async function POST(req: Request) {
       return new NextResponse('Missing requestId', { status: 400 });
     }
 
-    console.log(`💳 Payment confirmed for request ${requestId}`);
+    const numericRequestId = Number(requestId);
+    if (!Number.isFinite(numericRequestId)) {
+      console.error('❌ Invalid requestId in metadata:', requestId);
+      return new NextResponse('Invalid requestId', { status: 400 });
+    }
+
+    console.log(`💳 Payment confirmed for request ${numericRequestId}`);
 
     // --- [SUB-BLOCK: FETCH PATIENT ROW] ---
     const { data: patientRow, error: fetchError } = await supabase
       .from('patient_requests')
       .select('*')
-      .eq('id', requestId)
+      .eq('id', numericRequestId)
       .single();
 
     if (fetchError || !patientRow) {
@@ -121,36 +131,57 @@ export async function POST(req: Request) {
         finalDocument as Parameters<typeof renderToBuffer>[0],
       );
 
-      const finalPath = `reports/final/request-${requestId}.pdf`;
+      // Prefiks `final-` + id da ne sudaramo sa slučajnim imenima poput `1730....pdf` sa forme.
+      const finalPath = `final-report-request-${numericRequestId}.pdf`;
 
       const { error: uploadError } = await supabase.storage
-        .from('reports')
+        .from(FINAL_PDF_STORAGE_BUCKET)
         .upload(finalPath, pdfBuffer, {
-          contentType: 'application/pdf',
+          contentType: "application/pdf",
           upsert: true,
         });
 
-      if (!uploadError) {
+      if (uploadError) {
+        console.error(
+          "❌ Final PDF storage upload failed (proveri bucket i Storage policies):",
+          uploadError,
+        );
+      } else {
         const { data: publicUrlData } = supabase.storage
-          .from('reports')
+          .from(FINAL_PDF_STORAGE_BUCKET)
           .getPublicUrl(finalPath);
 
         finalPdfUrl = publicUrlData.publicUrl;
-        console.log('📄 Final PDF URL generated.');
+        console.log("📄 Final PDF URL generated:", finalPdfUrl);
       }
     } catch (err: unknown) {
       console.error('❌ PDF generation error:', err);
     }
 
     // --- [SUB-BLOCK: UPDATE DATABASE] ---
-    await supabase
+    const paymentIntentRaw = session.payment_intent;
+    const paymentIntentId =
+      typeof paymentIntentRaw === 'string'
+        ? paymentIntentRaw
+        : paymentIntentRaw &&
+            typeof paymentIntentRaw === 'object' &&
+            'id' in paymentIntentRaw
+          ? String((paymentIntentRaw as { id: string }).id)
+          : null;
+
+    const { error: updateError } = await supabase
       .from('patient_requests')
       .update({
         status: 'paid',
-        payment_intent_id: session.payment_intent as string,
+        ...(paymentIntentId ? { payment_intent_id: paymentIntentId } : {}),
         analysis_pdf_url: finalPdfUrl,
       })
-      .eq('id', requestId);
+      .eq('id', numericRequestId);
+
+    if (updateError) {
+      console.error('❌ patient_requests update failed:', updateError);
+      return new NextResponse('DB update failed', { status: 500 });
+    }
 
     // --- [SUB-BLOCK: SEND FINAL REPORT E-MAIL (RESEND, IN-PROCESS)] ---
     if (finalPdfUrl) {

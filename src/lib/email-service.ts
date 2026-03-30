@@ -16,6 +16,7 @@ import React from "react";
 import { Resend } from "resend";
 import { render } from "@react-email/render";
 import EmailTemplate from "@/components/EmailTemplate";
+import { getNextAppPublicUrl } from "@/lib/public-app-url";
 
 // --- [FUNCTIONAL BLOCK: STRICT TYPES — NO `any`] ---
 /** Payload when a patient first submits the request form (no payment yet). */
@@ -36,6 +37,20 @@ export interface FinalPdfReportEmailInput {
   priceDisplay: string;
   /** Public HTTPS URL to the full PDF in Supabase storage. */
   pdfUrl: string;
+}
+
+/**
+ * [DODATO 2026 — drugi pacijentov mejl] Posle eksperta: poziv na privatnu stranicu sa pregledom + plaćanje.
+ * Prvi mejl (sendRequestSubmissionEmails) ne sme sadržati ovaj korak.
+ */
+export interface ReportReadyPaymentInviteEmailInput {
+  patientName: string;
+  patientEmail: string | null;
+  requestId: string | number;
+  /** Npr. "$111 USD (extended review)" */
+  priceDisplay: string;
+  /** Puna HTTPS adresa ka /success?id= */
+  portalPaymentUrl: string;
 }
 
 /** One Resend API outcome (success carries Resend message id when present). */
@@ -67,18 +82,6 @@ function getFromAddress(): string {
 /** Primary administrator inbox for operational notices. */
 function getAdminEmail(): string {
   return process.env.MEDEX_ADMIN_EMAIL ?? "mdzdravko@gmail.com";
-}
-
-/**
- * Site URL is embedded in the patient template (portal link when no PDF yet).
- * Mirrors the old `getBaseUrl` logic from `request-analysis`.
- */
-function getSiteUrl(): string {
-  const raw =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    process.env.NEXT_PUBLIC_BASE_URL ??
-    "http://localhost:3000";
-  return raw.replace(/\/$/, "");
 }
 
 /**
@@ -202,7 +205,7 @@ async function sendHtmlEmail(options: {
 export async function sendRequestSubmissionEmails(
   input: RequestSubmissionEmailInput,
 ): Promise<BatchEmailResult> {
-  const siteUrl = getSiteUrl();
+  const siteUrl = getNextAppPublicUrl();
   const requestIdStr = String(input.requestId);
 
   // Render the shared React e-mail template to HTML (same visual language as before).
@@ -240,6 +243,70 @@ export async function sendRequestSubmissionEmails(
   return { patient: patientResult, admin: adminResult };
 }
 
+// --- [FUNCTIONAL BLOCK: PUBLIC — EXPERT READY, PAYMENT INVITE (2. PACIJENTOV MEJL)] ---
+/**
+ * Šalje isključivo drugi pacijentov mejl: izveštaj spreman za pregled + link ka /success (Stripe).
+ * Poziv: `POST /api/finalize-expert-report` nakon uploada preview PDF-a.
+ */
+export async function sendReportReadyPaymentInviteEmails(
+  input: ReportReadyPaymentInviteEmailInput,
+): Promise<BatchEmailResult> {
+  const siteUrl = getNextAppPublicUrl();
+  const requestIdStr = String(input.requestId);
+
+  let patientResult: SingleEmailResult | null = null;
+  if (input.patientEmail?.trim()) {
+    const patientHtml = await render(
+      React.createElement(EmailTemplate, {
+        mode: "report-ready-payment",
+        patientName: input.patientName,
+        requestId: requestIdStr,
+        price: input.priceDisplay,
+        pdfUrl: null,
+        baseUrl: siteUrl,
+        portalPaymentUrl: input.portalPaymentUrl,
+      }),
+    );
+
+    patientResult = await sendHtmlEmail({
+      to: input.patientEmail.trim(),
+      subject:
+        "Medex 2.0 — Your expert report is ready — review and complete payment",
+      html: patientHtml,
+    });
+  } else {
+    console.warn(
+      "[email-service] Report-ready invite: no patient e-mail — skipping patient message.",
+    );
+  }
+
+  const name = escapeHtml(input.patientName);
+  const id = escapeHtml(requestIdStr);
+  const price = escapeHtml(input.priceDisplay);
+  const portal = escapeHtml(input.portalPaymentUrl);
+
+  const adminHtml = `
+    <h2 style="font-family:system-ui,sans-serif;font-size:18px;">Expert report finalized — payment invite sent</h2>
+    <p style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;color:#111827;">
+      The expert workflow has marked a report as ready. The patient has been sent the second e-mail with a link to preview the report and complete Stripe payment.
+    </p>
+    <ul style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#374151;">
+      <li><strong>Patient:</strong> ${name}</li>
+      <li><strong>Request reference:</strong> ${id}</li>
+      <li><strong>Quoted fee:</strong> ${price}</li>
+      <li><strong>Patient portal link:</strong> <a href="${portal}" target="_blank" rel="noopener noreferrer">Open patient report page</a></li>
+    </ul>
+  `;
+
+  const adminResult = await sendHtmlEmail({
+    to: getAdminEmail(),
+    subject: "Medex 2.0 — Patient notified: report ready for payment",
+    html: adminHtml,
+  });
+
+  return { patient: patientResult, admin: adminResult };
+}
+
 // --- [FUNCTIONAL BLOCK: PUBLIC — STRIPE PAID, FINAL PDF] ---
 /**
  * Sends the patient their full-report notification and notifies the admin with the PDF link.
@@ -248,7 +315,7 @@ export async function sendRequestSubmissionEmails(
 export async function sendFinalPdfReportEmails(
   input: FinalPdfReportEmailInput,
 ): Promise<BatchEmailResult> {
-  const siteUrl = getSiteUrl();
+  const siteUrl = getNextAppPublicUrl();
   const requestIdStr = String(input.requestId);
 
   let patientResult: SingleEmailResult | null = null;
@@ -283,6 +350,54 @@ export async function sendFinalPdfReportEmails(
   });
 
   return { patient: patientResult, admin: adminResult };
+}
+
+// --- [FUNCTIONAL BLOCK: STRIPE CHECKOUT SESSION — ADMIN NOTICE ONLY] ---
+/**
+ * [IZMENA 2026] Poziva se kada se kreira Stripe Checkout sesija.
+ * Ranije je slao i pacijentu mejl ("Proceed to payment") — to je uklonjeno:
+ * pacijent dobija link za plaćanje samo u drugom mejlu (sendReportReadyPaymentInviteEmails),
+ * nakon što ekspert završi pregled (finalize-expert-report).
+ * Ovde ostaje obaveštenje adminu radi logovanja u inboxu.
+ */
+export interface CheckoutSessionInitEmailInput {
+  patientName: string;
+  requestId: string | number;
+  /** Amount in USD (whole or decimal dollars, e.g. 105 or 49.5). */
+  priceUsd: number;
+  patientEmail: string | null;
+  stripeSessionId: string;
+}
+
+export async function sendCheckoutSessionInitEmails(
+  input: CheckoutSessionInitEmailInput,
+): Promise<void> {
+  const name = escapeHtml(input.patientName);
+  const id = escapeHtml(String(input.requestId));
+  const price = escapeHtml(String(input.priceUsd));
+  const sid = escapeHtml(input.stripeSessionId);
+
+  const adminHtml = `
+    <h2 style="font-family:system-ui,sans-serif;font-size:18px;">Stripe Checkout session started</h2>
+    <p style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;color:#111827;">
+      A patient has opened the secure payment flow for a Medex 2.0 PhD cardiology analysis report.
+    </p>
+    <ul style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#374151;">
+      <li><strong>Patient:</strong> ${name}</li>
+      <li><strong>Request reference:</strong> ${id}</li>
+      <li><strong>Quoted amount (USD):</strong> $${price}</li>
+      <li><strong>Stripe session ID:</strong> ${sid}</li>
+    </ul>
+    <p style="font-family:system-ui,sans-serif;font-size:14px;color:#6B7280;">
+      Completion is recorded when Stripe sends <code>checkout.session.completed</code> to your webhook.
+    </p>
+  `;
+
+  await sendHtmlEmail({
+    to: getAdminEmail(),
+    subject: "Medex 2.0 — Stripe Checkout session started",
+    html: adminHtml,
+  });
 }
 
 // --- [FUNCTIONAL BLOCK: LEGACY `/api/send-email` COMPAT] ---

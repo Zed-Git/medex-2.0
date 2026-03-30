@@ -1,6 +1,14 @@
 "use server";
 
 // =============================================================================
+// [DODATO vs Zlatni Standard] — pouzdan upis u bazu (service role)
+// =============================================================================
+// Anon Supabase klijent često ne može da INSERT-uje u patient_requests ako RLS to zabrani.
+// Server Action koristi getSupabaseAdmin() (samo na serveru) da zahtev uvek bude sačuvan
+// kada su env promenljive ispravne.
+// =============================================================================
+//
+// =============================================================================
 // [DODATO vs Zlatni Standard] — prvi e-mail (pacijent + admin) sa landing forme
 // =============================================================================
 // Problem: Dugme "SEND FOR EXPERT ANALYSIS" na početnoj (page.tsx) pozivalo je samo
@@ -12,7 +20,7 @@
 // forme — zahtev je već u bazi.
 // =============================================================================
 
-import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { sendRequestSubmissionEmails } from "@/lib/email-service";
 
 // -------------------------------
@@ -20,6 +28,7 @@ import { sendRequestSubmissionEmails } from "@/lib/email-service";
 // -------------------------------
 export async function submitMedicalRequest(formData: FormData) {
   try {
+    const admin = getSupabaseAdmin();
     // --- CELINA 1: IZVLAČENJE PODATAKA ---
     const patientName = formData.get("patientName") as string;
     const email = formData.get("email") as string;
@@ -38,7 +47,7 @@ export async function submitMedicalRequest(formData: FormData) {
       const fileExt = file.name.split(".").pop();
       const fileName = `${Date.now()}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage
+      const { error: uploadError } = await admin.storage
         .from("medical-files")
         .upload(fileName, file, {
           cacheControl: "3600",
@@ -51,30 +60,43 @@ export async function submitMedicalRequest(formData: FormData) {
       }
 
       // Generisanje javnog URL-a za fajl
-      const { data: publicUrl } = supabase.storage.from("medical-files").getPublicUrl(fileName);
+      const { data: publicUrl } = admin.storage.from("medical-files").getPublicUrl(fileName);
       uploadedFileUrl = publicUrl.publicUrl;
     }
 
     // --- [DODATO U ZLATNI STANDARD] ---
-    // Razlog: Pakovanje svih PhD polja u medical_note za Admin prikaz (Problem 2)
-    const formattedPhDNote = anamnesis ? `
-PHD CLINICAL REPORT
--------------------
-AGE: ${anamnesis.age} | SEX: ${anamnesis.sex}
+    // Pakovanje PhD polja u medical_note za admin + PDF sekciju A.
+    // [IZMENA vs Zlatni standard 2026] Uklonjeni naslov „PHD CLINICAL REPORT“ i crtice — PDF ostaje čistiji.
+    const formattedPhDNote = anamnesis
+      ? `AGE: ${anamnesis.age} | SEX: ${anamnesis.sex}
 CHEST PAIN: ${anamnesis.chestPain || 'N/A'}
 RISK FACTORS: ${anamnesis.riskFactors || 'N/A'}
 ALLERGIES: ${anamnesis.allergies || 'N/A'}
-THERAPY: ${anamnesis.therapy || 'N/A'}
-    ` : "No anamnesis data.";
+THERAPY: ${anamnesis.therapy || 'N/A'}`
+      : "No anamnesis data.";
+
+    // --- [DODATO — e-mail quoted fee tekst] ---
+    // Napomena: mnoge baze nemaju kolonu `patient_requests.price` (Supabase schema cache).
+    // Ne šaljemo `price` u INSERT — iznos za Stripe se računa u /api/checkout iz urgency + site_config.
+    const { data: pricingRow } = await admin
+      .from("site_config")
+      .select("value")
+      .eq("key", "pricing")
+      .single();
+    const pv = pricingRow?.value as
+      | { normal?: string; priority?: string }
+      | undefined;
+    const normalStr = pv?.normal?.trim() ?? "";
+    const priorityStr = pv?.priority?.trim() ?? "";
 
     // --- CELINA 4: UPIS U BAZU (patient_requests) ---
     // [FIX]: Mapiranje polja prema Vašoj slici 3 (phone -> phone_number)
-    const { data, error } = await supabase
+    const { data, error } = await admin
       .from("patient_requests")
       .insert({
         patient_name: patientName,
         patient_email: email,
-        phone_number: phone, 
+        phone_number: phone,
         urgency_level: urgency,
         medical_note: formattedPhDNote, // Formatirani medicinski tekst
         file_url: uploadedFileUrl,
@@ -91,24 +113,13 @@ THERAPY: ${anamnesis.therapy || 'N/A'}
     if (data && typeof data === "object" && "id" in data) {
       const row = data as { id: number | string };
       try {
-        const { data: pricingRow } = await supabase
-          .from("site_config")
-          .select("value")
-          .eq("key", "pricing")
-          .single();
-
-        const pv = pricingRow?.value as
-          | { normal?: string; priority?: string }
-          | undefined;
-        const normal = pv?.normal?.trim() ?? "";
-        const priority = pv?.priority?.trim() ?? "";
         const priceDisplay =
           urgency === "Extended"
-            ? priority
-              ? `$${priority} USD (extended review)`
+            ? priorityStr
+              ? `$${priorityStr} USD (extended review)`
               : "Extended review (fee from site configuration)"
-            : normal
-              ? `$${normal} USD (basic review)`
+            : normalStr
+              ? `$${normalStr} USD (basic review)`
               : "Basic review (fee from site configuration)";
 
         const emailOutcome = await sendRequestSubmissionEmails({
@@ -130,9 +141,11 @@ THERAPY: ${anamnesis.therapy || 'N/A'}
     }
 
     return { success: true, data };
-  } catch (err) {
+  } catch (err: unknown) {
     console.error("Server Action error:", err);
-    return { success: false, error: "Unexpected server error" };
+    const message =
+      err instanceof Error ? err.message : "Unexpected server error";
+    return { success: false, error: message };
   }
 }
 

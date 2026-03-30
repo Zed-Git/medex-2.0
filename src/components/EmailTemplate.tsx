@@ -1,81 +1,150 @@
 // --- [FUNCTIONAL BLOCK: REACT IMPORT] ---
-// [ZLATNI STANDARD - UNCHANGED]
+// [ZLATNI STANDARD + DODATO 2026]
+// Promena toka mejlova: prvi mejl (processing) NE sme voditi na /success (plaćanje).
+// Drugi mejl (report-ready-payment) eksplicitno poziva na privatnu stranicu izveštaja + plaćanje.
+// Sav korisnički tekst u mejlu — na engleskom.
+// ---
+
 import * as React from "react";
 
 // --- [FUNCTIONAL BLOCK: PROPS TYPE] ---
-// [ZLATNI STANDARD + DODATO: baseUrl obavezno, price/pdfUrl mogu biti null]
 export type EmailTemplateProps = {
-  mode: "processing-notification" | "final-report";
+  mode:
+    | "processing-notification"
+    | "final-report"
+    | "report-ready-payment";
   patientName: string;
   requestId: string;
   price: string;
   pdfUrl: string | null;
   baseUrl: string;
+  /**
+   * [DODATO] Puna URL adresa ka /success?id= kada je mode `report-ready-payment`.
+   * Bez ovoga koristi se fallback iz baseUrl + requestId.
+   */
+  portalPaymentUrl?: string;
 };
 
-// --- [FUNCTIONAL BLOCK: SUBJECT HELPER (OPTIONAL)] ---
-// [ZLATNI STANDARD + DODATO: koristimo ako želiš da generišeš subject i ovde]
 export function buildSubjectLine(mode: EmailTemplateProps["mode"]) {
-  return mode === "final-report"
-    ? "Your Medex 2.0 clinical report is ready"
-    : "Your Medex 2.0 clinical report notification";
+  if (mode === "final-report") {
+    return "Your Medex 2.0 clinical report is ready";
+  }
+  if (mode === "report-ready-payment") {
+    return "Your expert report is ready — review and complete payment";
+  }
+  return "Your Medex 2.0 request was received";
 }
 
-// --- [FUNCTIONAL BLOCK: EMAIL TEMPLATE COMPONENT] ---
-// [ZLATNI STANDARD - GLAVNI DEO, SVE NA ENGLESKOM]
 export default function EmailTemplate(props: EmailTemplateProps) {
-  const { mode, patientName, requestId, price, pdfUrl, baseUrl } = props;
+  const {
+    mode,
+    patientName,
+    requestId,
+    price,
+    pdfUrl,
+    baseUrl,
+    portalPaymentUrl,
+  } = props;
 
-  const isFinal = mode === "final-report";
+  const root = baseUrl.replace(/\/$/, "");
+  const homeUrl = `${root}/`;
 
-  const reportUrl = pdfUrl ? pdfUrl : `${baseUrl.replace(/\/$/, "")}/dashboard`; // fallback ako nema direktan PDF
+  const paymentPortalUrl =
+    portalPaymentUrl && portalPaymentUrl.startsWith("http")
+      ? portalPaymentUrl
+      : `${root}/success?id=${encodeURIComponent(requestId)}`;
 
-  const statusText = isFinal ? "READY FOR DOWNLOAD" : "PROCESSING";
+  let primaryHref: string;
+  let ctaLabel: string;
+  let statusText: string;
+
+  if (mode === "final-report") {
+    primaryHref = pdfUrl ?? homeUrl;
+    ctaLabel = "View full report (PDF)";
+    statusText = "PAID — FULL REPORT AVAILABLE";
+  } else if (mode === "report-ready-payment") {
+    primaryHref = paymentPortalUrl;
+    ctaLabel = "Open your report & complete payment";
+    statusText = "READY FOR PREVIEW — PAYMENT REQUIRED FOR FULL PDF";
+  } else {
+    // processing-notification — prvi mejl: samo početna stranica, bez /success (nema plaćanja)
+    primaryHref = homeUrl;
+    ctaLabel = "Return to Medex 2.0";
+    statusText = "RECEIVED — UNDER EXPERT REVIEW";
+  }
 
   return (
     <div
       style={{
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
         fontSize: "14px",
-        lineHeight: 1.5,
+        lineHeight: 1.55,
         color: "#111827",
       }}
     >
-      {/* --- [BLOCK: HEADER] --- */}
       <h1 style={{ fontSize: "18px", marginBottom: "8px" }}>MEDEXNEWS AI</h1>
       <p style={{ margin: "0 0 16px 0" }}>Dear {patientName || "Patient"},</p>
 
-      {/* --- [BLOCK: MAIN MESSAGE] --- */}
-      {isFinal ? (
+      {mode === "final-report" && (
         <p style={{ margin: "0 0 12px 0" }}>
-          We are pleased to inform you that your PhD Cardiology Analysis has
-          been completed by Dr. Zdravko&apos;s expert team.
-        </p>
-      ) : (
-        <p style={{ margin: "0 0 12px 0" }}>
-          Your clinical report is being processed. You will receive a secure
-          link to your final report once it is ready.
+          Your payment has been confirmed. Your full PhD Cardiology Analysis
+          report is attached below as a secure link. Thank you for trusting
+          Medex 2.0.
         </p>
       )}
 
-      {/* --- [BLOCK: REPORT REFERENCE] --- */}
+      {mode === "processing-notification" && (
+        <>
+          <p style={{ margin: "0 0 12px 0" }}>
+            Thank you for submitting your request. We have received your
+            clinical information and our cardiology team will review it in line
+            with our PhD-level standards.
+          </p>
+          <p style={{ margin: "0 0 12px 0" }}>
+            <strong>You do not need to pay at this stage.</strong> When your
+            expert report is ready, you will receive a <strong>separate e-mail</strong>{" "}
+            with a private link to preview your report and, if you choose to
+            proceed, to complete secure payment for the full PDF.
+          </p>
+        </>
+      )}
+
+      {mode === "report-ready-payment" && (
+        <>
+          <p style={{ margin: "0 0 12px 0" }}>
+            Your expert PhD cardiology review is ready. You can open your
+            private report page to <strong>preview</strong> the clinical
+            document and, when you are satisfied, complete a secure Stripe
+            payment to unlock the <strong>full downloadable PDF</strong>.
+          </p>
+          <p style={{ margin: "0 0 12px 0" }}>
+            Please use the button below — it is the only message that contains
+            the payment step for this request.
+          </p>
+        </>
+      )}
+
       <p style={{ margin: "0 0 8px 0" }}>
-        <strong>Report Reference:</strong> {requestId || "N/A"}
+        <strong>Report reference:</strong> {requestId || "N/A"}
         <br />
         <strong>Status:</strong> {statusText}
       </p>
 
-      {/* --- [BLOCK: PRICE INFO] --- */}
-      {price && (
+      {price && mode !== "processing-notification" && (
         <p style={{ margin: "0 0 12px 0" }}>
-          <strong>Price:</strong> {price}
+          <strong>Quoted fee:</strong> {price}
         </p>
       )}
 
-      {/* --- [BLOCK: CTA BUTTON] --- */}
+      {price && mode === "processing-notification" && (
+        <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "#374151" }}>
+          <strong>Indicative service fee (for your records):</strong> {price}
+        </p>
+      )}
+
       <p style={{ margin: "16px 0" }}>
         <a
-          href={reportUrl}
+          href={primaryHref}
           style={{
             display: "inline-block",
             padding: "10px 18px",
@@ -86,15 +155,16 @@ export default function EmailTemplate(props: EmailTemplateProps) {
             fontWeight: 600,
           }}
         >
-          {isFinal ? "View My Report" : "Open Medex 2.0 Portal"}
+          {ctaLabel}
         </a>
       </p>
 
-      {/* --- [BLOCK: FOOTER] --- */}
       <p style={{ margin: "16px 0 0 0", fontSize: "12px", color: "#6B7280" }}>
-        2026 All Rights Reserved. Unauthorized Use Prohibited.
+        © {new Date().getFullYear()} Medex 2.0. All rights reserved.
         <br />
-        MedExNews does not provide medical advice, diagnosis or treatment.
+        MedExNews does not provide emergency medical advice, diagnosis, or
+        treatment. For urgent symptoms, contact your physician or local
+        emergency services.
       </p>
     </div>
   );

@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       typeof record.patientEmail === "string" ? record.patientEmail : "";
     const medicalNote =
       typeof record.medicalNote === "string" ? record.medicalNote : "";
-    const price =
+    const priceForEmail =
       record.price === null || record.price === undefined
         ? null
         : String(record.price);
@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
     }
 
     // --- [SUB-BLOCK: INSERT INTO DATABASE] ---
+    // [SCHEMA NOTE] Do not insert `price` unless the column exists in Supabase.
     const { data: insertData, error: insertError } = await supabase
       .from("patient_requests")
       .insert({
@@ -60,7 +61,6 @@ export async function POST(req: NextRequest) {
         patient_email: patientEmail,
         medical_note: medicalNote,
         status: "pending",
-        price: price,
       })
       .select("id")
       .single();
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
         patientName,
         patientEmail,
         requestId,
-        priceDisplay: price,
+        priceDisplay: priceForEmail,
       });
       console.log(
         "[request-analysis] E-mail dispatch finished:",

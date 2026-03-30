@@ -1,14 +1,23 @@
 /* 
   FAZA: Napredna Automatizacija - Zadatak 1
-  STATUS: Golden Standard 2.3 (Final Medical Layout)
-  PROMENE: 
-  1. References moved to the bottom.
-  2. "Note" text placed exactly above the footer line.
-  3. Professional PhD formatting.
+  STATUS: Golden Standard 2.3 + dopune (PDF estetika / sadržaj)
+  [IZMENE vs Zlatni standard — 2026]
+  1. Ispod naslova ostaje samo CRVENA linija (plava uklonjena).
+  2. Sekcija D: nema više podrazumevanih ESC/ACC referenci — samo dinamički tekst eksperta.
+  3. Footer „Note“: jača medicinsko-pravna formulacija (engleski).
+  4. Ostalo ne diramo (reference dole, PhD layout, preview badge).
 */
 
 import React from 'react';
 import { Page, Text, View, Document, StyleSheet } from '@react-pdf/renderer';
+
+// [Pomoćna funkcija] Stari zapisi u bazi još uvek mogu imati „PHD CLINICAL REPORT“ + crtice — skidamo to samo za prikaz u PDF-u.
+function stripLegacyPhdHeader(note: string): string {
+  return note.replace(
+    /^\s*PHD\s+CLINICAL\s+REPORT\s*[\r\n]+[-\s]+[\r\n]*/i,
+    '',
+  );
+}
 
 // --- [FUNCTIONAL BLOCK: PROPS INTERFACE] ---
 // [DODATO vs stariji layout: tipovi za integration sa webhook-om i backendom]
@@ -34,8 +43,8 @@ const styles = StyleSheet.create({
   logoText: { fontSize: 18, fontWeight: 'bold', color: '#2E5481', fontStyle: 'italic' },
   aiTag: { color: '#E31E24', fontSize: 14 },
   doctorTitle: { fontSize: 13, color: '#64748b', marginTop: 4 },
-  blueLine: { borderBottomWidth: 3, borderBottomColor: '#2E5481', marginTop: 8 },
-  redLine: { borderBottomWidth: 1.5, borderBottomColor: '#E31E24', marginTop: 2 },
+  /* [IZMENA vs Zlatni standard] Plava linija uklonjena — ostaje samo crvena ispod tagline-a. */
+  redLine: { borderBottomWidth: 1.5, borderBottomColor: '#E31E24', marginTop: 8 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, marginBottom: 25 },
   infoLabel: { fontSize: 9, color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' },
   infoValue: { fontSize: 10, color: '#000', marginTop: 2 },
@@ -86,7 +95,7 @@ const MedicalReportPDF = ({
       )}
 
       {/* --- [SUB-BLOCK: HEADER] --- */}
-      {/* [ZLATNI STANDARD - NE MENJAMO VIZUELNI IDENTITET] */}
+      {/* [Zlatni standard + dopuna] Jedna crvena linija ispod podnaslova (plava uklonjena). */}
       <View style={styles.header}>
         <Text style={styles.logoText}>
           MEDEXNEWS <Text style={styles.aiTag}>AI</Text>
@@ -94,7 +103,6 @@ const MedicalReportPDF = ({
         <Text style={styles.doctorTitle}>
           Scientists & Cardiology Team | Evidence Based Personalized Medicine
         </Text>
-        <View style={styles.blueLine} />
         <View style={styles.redLine} />
       </View>
 
@@ -117,7 +125,7 @@ const MedicalReportPDF = ({
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>A) PATIENT ANAMNESIS & DATA</Text>
         <View style={styles.contentBox}>
-          <Text>{patient.medical_note}</Text>
+          <Text>{stripLegacyPhdHeader(patient.medical_note || '')}</Text>
         </View>
       </View>
 
@@ -140,15 +148,14 @@ const MedicalReportPDF = ({
       </View>
 
       {/* --- [SUB-BLOCK: SECTION D - REFERENCES] --- */}
-      {/* [ZLATNI STANDARD: reference spuštene dole] */}
+      {/* [IZMENA vs Zlatni standard] Bez generičkih ESC/ACC stringova — samo ono što ekspert unese. */}
       <View style={{ marginTop: 30 }}>
         <Text style={styles.sectionTitle}>
           D) REFERENCES (Evidence Based Medicine)
         </Text>
         <View style={styles.contentBox}>
           <Text style={{ fontSize: 8 }}>
-            {references ||
-              '1. ESC Guidelines. 2. ACC/AHA Clinical Practice Standards.'}
+            {references?.trim() ? references.trim() : 'N/A'}
           </Text>
         </View>
       </View>
@@ -156,10 +163,12 @@ const MedicalReportPDF = ({
       {/* --- [SUB-BLOCK: FOOTER + NOTE] --- */}
       {/* Note iznad linije + legal disclaimer u dnu stranice */}
       <View style={styles.footerContainer}>
+        {/* [IZMENA vs Zlatni standard] Jača medicinsko-pravna formulacija na engleskom. */}
         <Text style={styles.noteAboveLine}>
           Note:{' '}
           <Text style={{ color: '#2E5481' }}>
-            The report should be shown to your doctor.
+            Before any further treatment, you must show this report to your
+            doctor and review it with them in consultation.
           </Text>
         </Text>
         <View style={styles.footerLine}>
