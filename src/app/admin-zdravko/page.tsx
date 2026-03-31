@@ -12,11 +12,11 @@
 
 "use client";
 
-import React, { useEffect, ReactNode, useState, useMemo } from "react";
+import React, { useCallback, useEffect, ReactNode, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase"; 
 import { 
   X, Users, Clock, DollarSign, 
-  CheckCircle, Activity, Lock, PlayCircle, Send, CreditCard, Layout, FileEdit, FileText
+  CheckCircle, Activity, Lock, PlayCircle, Send, CreditCard, Layout, FileEdit
 } from "lucide-react"; 
 import dynamic from 'next/dynamic';
 
@@ -38,18 +38,34 @@ interface PatientRequest {
   status: string; 
 }
 
+// [IZMENA vs Zlatni standard] CMS model za “MEDICINE IN THE FUTURE” kartice + sadržaj za /analysis/[slug].
 interface MedicineNews {
   id: number;
-  tag: string;
+  slug: string;
+  /** Public tag prikazan na kartici (BASICS / CLINICAL CARDIOLOGY / FUTURE). */
+  tag: "BASICS" | "CLINICAL CARDIOLOGY" | "FUTURE";
   title: string;
   desc: string;
+  /** Duži sadržaj za zasebnu stranicu (admin uređuje; korisnik samo čita). */
+  body: string;
+  imageUrl: string | null;
+  videoUrl: string | null;
 }
 
 interface FooterLinks {
-  company: string[];
-  legal: string[];
-  resources: string[];
+  company: { label: string; href: string }[];
+  legal: { label: string; href: string }[];
+  resources: { label: string; href: string }[];
 }
+
+// [DODATO vs Zlatni standard] CMS content za statične stranice.
+type AboutPageCms = { imageUrl: string | null; body: string };
+type LegalPagesCms = {
+  termsAndConditions: string;
+  userAgreement: string;
+  noticeToReaders: string;
+  termsOfPayment: string;
+};
 
 export default function AdminDashboard() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -70,25 +86,75 @@ export default function AdminDashboard() {
   // --- CMS STATES ---
   const [prices, setPrices] = useState({ normal: "33", priority: "66" });
   const [heroText, setHeroText] = useState("After analysis, we will send you PhD Personalized report...");
+  const [heroDoctorPhotoUrl, setHeroDoctorPhotoUrl] = useState<string>("/doctor.png");
+  const [heroUploading, setHeroUploading] = useState(false);
   
-  const [medicineNews, setMedicineNews] = useState<MedicineNews[]>([
-    { id: 1, tag: "TECHNOLOGY", title: "AI in Echocardiography", desc: "Machine learning trends." },
-    { id: 2, tag: "GENETICS", title: "Gene Therapy Trends", desc: "Future of cardiomyopathy." },
-    { id: 3, tag: "CLINICAL", title: "Remote Monitoring", desc: "Impact of wearable devices." }
-  ]);
+  const DEFAULT_MEDICINE_NEWS: MedicineNews[] = useMemo(
+    () => [
+      {
+        id: 1,
+        slug: "ai-echocardiography",
+        tag: "BASICS",
+        title: "AI in Echocardiography",
+        desc: "Machine learning trends.",
+        body: "",
+        imageUrl: null,
+        videoUrl: null,
+      },
+      {
+        id: 2,
+        slug: "gene-therapy-trends",
+        tag: "CLINICAL CARDIOLOGY",
+        title: "Gene Therapy Trends",
+        desc: "Future of cardiomyopathy.",
+        body: "",
+        imageUrl: null,
+        videoUrl: null,
+      },
+      {
+        id: 3,
+        slug: "remote-monitoring",
+        tag: "FUTURE",
+        title: "Remote Monitoring",
+        desc: "Impact of wearable devices.",
+        body: "",
+        imageUrl: null,
+        videoUrl: null,
+      },
+    ],
+    [],
+  );
+  const [medicineNews, setMedicineNews] = useState<MedicineNews[]>(DEFAULT_MEDICINE_NEWS);
 
   const [footerLinks, setFooterLinks] = useState<FooterLinks>({
-    company: ["ABOUT US", "CONTACT US"],
-    legal: ["TERMS & CONDITIONS", "USER AGREEMENT"],
-    resources: ["NOTICE TO READERS", "TERMS OF PAYMENT"]
+    company: [
+      { label: "ABOUT US", href: "/about" },
+      { label: "CONTACT US", href: "/contact" },
+    ],
+    legal: [
+      { label: "TERMS & CONDITIONS", href: "/terms-and-conditions" },
+      { label: "USER AGREEMENT", href: "/user-agreement" },
+    ],
+    resources: [
+      { label: "NOTICE TO READERS", href: "/notice-to-readers" },
+      { label: "TERMS OF PAYMENT", href: "/terms-of-payment" },
+    ],
+  });
+
+  // --- PAGES CMS (ABOUT / LEGAL) ---
+  const [aboutCms, setAboutCms] = useState<AboutPageCms>({
+    imageUrl: null,
+    body: "",
+  });
+  const [legalCms, setLegalCms] = useState<LegalPagesCms>({
+    termsAndConditions: "",
+    userAgreement: "",
+    noticeToReaders: "",
+    termsOfPayment: "",
   });
 
   /* --- CELINA 1: DATABASE SYNCHRONIZATION --- */
-  useEffect(() => { 
-    if (isLoggedIn) loadAllData();
-  }, [isLoggedIn]);
-
-  async function loadAllData() {
+  const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
       // 1. Fetch Clinical Cases
@@ -103,12 +169,110 @@ export default function AdminDashboard() {
           priority: config.value.priority || "66"
         });
       }
+
+      // 3. Fetch CMS content blocks
+      const { data: heroCfg } = await supabase
+        .from("site_config")
+        .select("value")
+        .eq("key", "hero_content")
+        .single();
+      const hv = heroCfg?.value as
+        | { doctorPhotoUrl?: string; floatingMessage?: string }
+        | undefined;
+      if (hv?.doctorPhotoUrl) setHeroDoctorPhotoUrl(String(hv.doctorPhotoUrl));
+      if (hv?.floatingMessage) setHeroText(String(hv.floatingMessage));
+
+      const { data: newsCfg } = await supabase
+        .from("site_config")
+        .select("value")
+        .eq("key", "clinical_news")
+        .single();
+      const nv = newsCfg?.value as { items?: unknown } | undefined;
+      if (Array.isArray(nv?.items)) {
+        const items = nv.items as Array<Partial<MedicineNews>>;
+        // Map i popuni sva polja (body/image/video) ako postoje.
+        const next = [0, 1, 2].map((idx) => {
+          const it = items[idx] ?? {};
+          const fallback = DEFAULT_MEDICINE_NEWS[idx];
+          return {
+            id: typeof it.id === "number" ? it.id : fallback.id,
+            slug: typeof it.slug === "string" && it.slug.trim() ? it.slug : fallback.slug,
+            tag:
+              it.tag === "BASICS" || it.tag === "CLINICAL CARDIOLOGY" || it.tag === "FUTURE"
+                ? it.tag
+                : fallback.tag,
+            title: typeof it.title === "string" ? it.title : fallback.title,
+            desc:
+              typeof (it as { description?: unknown }).description === "string"
+                ? String((it as { description: string }).description)
+                : typeof (it as { desc?: unknown }).desc === "string"
+                  ? String((it as { desc: string }).desc)
+                  : fallback.desc,
+            body: typeof (it as { body?: unknown }).body === "string" ? String((it as { body: string }).body) : fallback.body,
+            imageUrl:
+              typeof (it as { imageUrl?: unknown }).imageUrl === "string"
+                ? String((it as { imageUrl: string }).imageUrl)
+                : null,
+            videoUrl:
+              typeof (it as { videoUrl?: unknown }).videoUrl === "string"
+                ? String((it as { videoUrl: string }).videoUrl)
+                : null,
+          } as MedicineNews;
+        });
+        setMedicineNews(next);
+      }
+
+      const { data: footerCfg } = await supabase
+        .from("site_config")
+        .select("value")
+        .eq("key", "footer_links")
+        .single();
+      const fv = footerCfg?.value as Partial<FooterLinks> | undefined;
+      if (fv?.company && fv?.legal && fv?.resources) {
+        setFooterLinks({
+          company: fv.company,
+          legal: fv.legal,
+          resources: fv.resources,
+        } as FooterLinks);
+      }
+
+      const { data: aboutCfg } = await supabase
+        .from("site_config")
+        .select("value")
+        .eq("key", "about_page")
+        .single();
+      const av = aboutCfg?.value as Partial<AboutPageCms> | undefined;
+      if (av) {
+        setAboutCms({
+          imageUrl: typeof av.imageUrl === "string" ? av.imageUrl : null,
+          body: typeof av.body === "string" ? av.body : "",
+        });
+      }
+
+      const { data: legalCfg } = await supabase
+        .from("site_config")
+        .select("value")
+        .eq("key", "legal_pages")
+        .single();
+      const lv = legalCfg?.value as Partial<LegalPagesCms> | undefined;
+      if (lv) {
+        setLegalCms({
+          termsAndConditions: typeof lv.termsAndConditions === "string" ? lv.termsAndConditions : "",
+          userAgreement: typeof lv.userAgreement === "string" ? lv.userAgreement : "",
+          noticeToReaders: typeof lv.noticeToReaders === "string" ? lv.noticeToReaders : "",
+          termsOfPayment: typeof lv.termsOfPayment === "string" ? lv.termsOfPayment : "",
+        });
+      }
     } catch (err) {
       console.error("Clinical Sync Error:", err);
     } finally {
       setLoading(false);
     }
-  }
+  }, [DEFAULT_MEDICINE_NEWS]);
+
+  useEffect(() => {
+    if (isLoggedIn) loadAllData();
+  }, [isLoggedIn, loadAllData]);
 
   /* --- CELINA 2: CMS ACTIONS (CLEAN SYNC) --- */
   const handleSavePrices = async () => {
@@ -134,7 +298,114 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleSaveCMS = () => alert("CMS Content stored in clinical cloud.");
+  // [IZMENA vs Zlatni standard] CMS Editor sada zaista upisuje u site_config, umesto alert().
+  const handleSaveHeroContent = async () => {
+    setIsSending(true);
+    try {
+      const cleanHero = {
+        doctorPhotoUrl: heroDoctorPhotoUrl,
+        floatingMessage: heroText,
+      };
+      const { error } = await supabase.from("site_config").upsert(
+        { key: "hero_content", value: cleanHero },
+        { onConflict: "key" },
+      );
+      if (error) throw error;
+      alert("Success: Hero content updated.");
+    } catch (err) {
+      alert("Error: " + (err instanceof Error ? err.message : "Sync failed"));
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleSaveClinicalNews = async () => {
+    setIsSending(true);
+    try {
+      // [IZMENA vs prethodni CMS] Admin sada uređuje i “duži sadržaj + media” koji se prikazuje na /analysis/[slug].
+      const items = medicineNews.slice(0, 3).map((n) => ({
+        id: n.id,
+        slug: n.slug,
+        tag: n.tag,
+        title: n.title,
+        description: n.desc,
+        body: n.body,
+        imageUrl: n.imageUrl,
+        videoUrl: n.videoUrl,
+      }));
+      const { error } = await supabase.from("site_config").upsert(
+        { key: "clinical_news", value: { items } },
+        { onConflict: "key" },
+      );
+      if (error) throw error;
+      alert("Success: Clinical news cards updated.");
+    } catch (err) {
+      alert("Error: " + (err instanceof Error ? err.message : "Sync failed"));
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleSaveFooterLinks = async () => {
+    setIsSending(true);
+    try {
+      const { error } = await supabase.from("site_config").upsert(
+        { key: "footer_links", value: footerLinks },
+        { onConflict: "key" },
+      );
+      if (error) throw error;
+      alert("Success: Footer links updated.");
+    } catch (err) {
+      alert("Error: " + (err instanceof Error ? err.message : "Sync failed"));
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleSaveAboutPage = async () => {
+    setIsSending(true);
+    try {
+      const { error } = await supabase.from("site_config").upsert(
+        { key: "about_page", value: aboutCms },
+        { onConflict: "key" },
+      );
+      if (error) throw error;
+      alert("Success: About page updated.");
+    } catch (err) {
+      alert("Error: " + (err instanceof Error ? err.message : "Sync failed"));
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleSaveLegalPages = async () => {
+    setIsSending(true);
+    try {
+      const { error } = await supabase.from("site_config").upsert(
+        { key: "legal_pages", value: legalCms },
+        { onConflict: "key" },
+      );
+      if (error) throw error;
+      alert("Success: Legal pages updated.");
+    } catch (err) {
+      alert("Error: " + (err instanceof Error ? err.message : "Sync failed"));
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  async function uploadCmsFile(file: File, prefix: string): Promise<string> {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("prefix", prefix);
+    const res = await fetch("/api/cms/upload", { method: "POST", body: fd });
+    const data: unknown = await res.json();
+    const payload = data as { url?: string; error?: string; details?: string };
+    if (!res.ok || !payload.url) {
+      throw new Error(payload.details || payload.error || `Upload failed (${res.status})`);
+    }
+    return payload.url;
+  }
 
   /* --- CELINA 3: MEDICAL WORKFLOW & EMAIL --- */
   const handleSendReport = async () => {
@@ -277,33 +548,183 @@ export default function AdminDashboard() {
             <div className="bg-white p-8 rounded-[40px] shadow-xl border border-slate-100">
                 <h3 className="text-lg font-black text-[#2E5481] uppercase italic mb-6 flex items-center gap-2"><Layout /> Hero Content</h3>
                 <div className="space-y-4 font-bold text-[10px] uppercase text-slate-400">
-                    <div><label className="block mb-1">Doctor Photo</label><input type="file" className="w-full p-3 bg-slate-50 border rounded-2xl text-[10px]" /></div>
-                    <div><label className="block mb-1">Floating Message</label><textarea value={heroText} onChange={e=>setHeroText(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-900 font-bold h-24 outline-none focus:border-[#2E5481]" /></div>
-                    
-                    <div>
-                      <label className="block mb-1">Sample Report PDF</label>
-                      <div className="flex items-center gap-2">
-                        <input type="file" className="flex-1 p-3 bg-slate-50 border rounded-2xl text-[10px]" />
-                        <FileText className="text-[#2E5481]" size={24} />
+                    <div className="space-y-2">
+                      <label className="block mb-1">Doctor Photo</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="w-full p-3 bg-slate-50 border rounded-2xl text-[10px]"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          setHeroUploading(true);
+                          try {
+                            const url = await uploadCmsFile(f, "hero-doctor");
+                            setHeroDoctorPhotoUrl(url);
+                          } catch (err) {
+                            alert("Upload error: " + (err instanceof Error ? err.message : "Unknown"));
+                          } finally {
+                            setHeroUploading(false);
+                          }
+                        }}
+                      />
+                      <div className="text-[10px] text-slate-500 normal-case font-bold">
+                        Current: <span className="font-mono break-all">{heroDoctorPhotoUrl}</span>
                       </div>
+                      {/* [DODATO vs Zlatni standard] Vizuelni preview hero slike + brzo uklanjanje. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element -- remote/public URL */}
+                      <img
+                        src={heroDoctorPhotoUrl}
+                        alt="Doctor photo preview"
+                        className="w-full h-40 object-cover rounded-2xl border border-slate-100 bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setHeroDoctorPhotoUrl("/doctor.png")}
+                        className="w-full bg-white border border-slate-200 text-slate-700 p-4 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-50"
+                      >
+                        Remove photo (use default)
+                      </button>
                     </div>
-
-                    <button onClick={handleSaveCMS} className="w-full bg-[#2E5481] text-white p-5 rounded-2xl font-black uppercase shadow-md">Update Hero Section</button>
+                    <div><label className="block mb-1">Floating Message</label><textarea value={heroText} onChange={e=>setHeroText(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-900 font-bold h-24 outline-none focus:border-[#2E5481]" /></div>
+                    <button
+                      onClick={handleSaveHeroContent}
+                      disabled={isSending || heroUploading}
+                      className="w-full bg-[#2E5481] text-white p-5 rounded-2xl font-black uppercase shadow-md disabled:opacity-60"
+                    >
+                      {heroUploading ? "Uploading..." : "Update Hero Section"}
+                    </button>
                 </div>
             </div>
 
             <div className="bg-white p-8 rounded-[40px] shadow-xl border border-slate-100 lg:col-span-2 text-left">
                 <h3 className="text-lg font-black text-[#2E5481] uppercase italic mb-6 flex items-center gap-2"><Activity /> Clinical News Control</h3>
+                <p className="text-xs text-slate-500 font-bold mb-6">
+                  Edit the public “Medicine in the future” cards and the full content shown on
+                  <span className="font-mono"> /analysis/[slug]</span>. Patients can view only; only admins can edit.
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
                     {medicineNews.map((news, idx) => (
                       <div key={news.id} className="p-6 bg-slate-50 rounded-[30px] border-2 border-slate-100 space-y-4">
-                         <div className="border-l-4 border-red-500 pl-3"><p className="text-[10px] font-black text-red-500 uppercase">{news.tag}</p></div>
-                         <input className="w-full p-3 text-sm font-bold rounded-xl border-2 border-slate-100 outline-none focus:border-[#2E5481]" value={news.title} onChange={e=>{ const n = [...medicineNews]; n[idx].title = e.target.value; setMedicineNews(n); }} />
-                         <textarea className="w-full p-3 text-xs h-24 border-2 border-slate-100 rounded-xl outline-none focus:border-[#2E5481]" value={news.desc} onChange={e=>{ const n = [...medicineNews]; n[idx].desc = e.target.value; setMedicineNews(n); }} />
+                         <div className="border-l-4 border-red-500 pl-3 space-y-1">
+                           <p className="text-[10px] font-black text-red-500 uppercase">{news.tag}</p>
+                           <p className="text-[10px] font-bold text-slate-400">
+                             Slug: <span className="font-mono">{news.slug}</span>
+                           </p>
+                         </div>
+                         <input
+                           className="w-full p-3 text-sm font-bold rounded-xl border-2 border-slate-100 outline-none focus:border-[#2E5481]"
+                           value={news.title}
+                           onChange={e=>{ const n = [...medicineNews]; n[idx] = { ...n[idx], title: e.target.value }; setMedicineNews(n); }}
+                         />
+                         <textarea
+                           className="w-full p-3 text-xs h-20 border-2 border-slate-100 rounded-xl outline-none focus:border-[#2E5481]"
+                           value={news.desc}
+                           onChange={e=>{ const n = [...medicineNews]; n[idx] = { ...n[idx], desc: e.target.value }; setMedicineNews(n); }}
+                         />
+                         <textarea
+                           className="w-full p-3 text-xs h-36 border-2 border-slate-100 rounded-xl outline-none focus:border-[#2E5481]"
+                           placeholder="Full page content (use paragraphs separated by blank lines)…"
+                           value={news.body}
+                           onChange={e=>{ const n = [...medicineNews]; n[idx] = { ...n[idx], body: e.target.value }; setMedicineNews(n); }}
+                         />
+                         <div className="space-y-2">
+                           <label className="text-[10px] font-black uppercase text-slate-400">
+                             Image (optional)
+                           </label>
+                           <input
+                             type="file"
+                             accept="image/*"
+                             className="w-full p-3 bg-white border rounded-2xl text-[10px]"
+                             onChange={async (e) => {
+                               const f = e.target.files?.[0];
+                               if (!f) return;
+                               try {
+                                 const url = await uploadCmsFile(f, `clinical-${news.slug}-img`);
+                                 const n = [...medicineNews];
+                                 n[idx] = { ...n[idx], imageUrl: url };
+                                 setMedicineNews(n);
+                               } catch (err) {
+                                 alert("Upload error: " + (err instanceof Error ? err.message : "Unknown"));
+                               }
+                             }}
+                           />
+                           {news.imageUrl && (
+                            <div className="space-y-2">
+                              <div className="text-[10px] text-slate-500 normal-case font-bold break-all">
+                                Current: {news.imageUrl}
+                              </div>
+                              {/* [DODATO vs Zlatni standard] Vizuelni preview uploadovane slike. */}
+                              {/* eslint-disable-next-line @next/next/no-img-element -- remote/public URL */}
+                              <img
+                                src={news.imageUrl}
+                                alt="Clinical news image preview"
+                                className="w-full h-28 object-cover rounded-2xl border border-slate-100 bg-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const n = [...medicineNews];
+                                  n[idx] = { ...n[idx], imageUrl: null };
+                                  setMedicineNews(n);
+                                }}
+                                className="w-full bg-white border border-slate-200 text-slate-700 p-3 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-50"
+                              >
+                                Remove image
+                              </button>
+                            </div>
+                           )}
+                         </div>
+                         <div className="space-y-2">
+                           <label className="text-[10px] font-black uppercase text-slate-400">
+                             Video (optional)
+                           </label>
+                           <input
+                             type="file"
+                             accept="video/*"
+                             className="w-full p-3 bg-white border rounded-2xl text-[10px]"
+                             onChange={async (e) => {
+                               const f = e.target.files?.[0];
+                               if (!f) return;
+                               try {
+                                 const url = await uploadCmsFile(f, `clinical-${news.slug}-vid`);
+                                 const n = [...medicineNews];
+                                 n[idx] = { ...n[idx], videoUrl: url };
+                                 setMedicineNews(n);
+                               } catch (err) {
+                                 alert("Upload error: " + (err instanceof Error ? err.message : "Unknown"));
+                               }
+                             }}
+                           />
+                           {news.videoUrl && (
+                            <div className="space-y-2">
+                              <div className="text-[10px] text-slate-500 normal-case font-bold break-all">
+                                Current: {news.videoUrl}
+                              </div>
+                              {/* [DODATO vs Zlatni standard] Vizuelni preview uploadovanog videa. */}
+                              <video
+                                src={news.videoUrl}
+                                controls
+                                className="w-full rounded-2xl border border-slate-100 bg-black"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const n = [...medicineNews];
+                                  n[idx] = { ...n[idx], videoUrl: null };
+                                  setMedicineNews(n);
+                                }}
+                                className="w-full bg-white border border-slate-200 text-slate-700 p-3 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-50"
+                              >
+                                Remove video
+                              </button>
+                            </div>
+                           )}
+                         </div>
                       </div>
                     ))}
                 </div>
-                <button onClick={handleSaveCMS} className="w-full bg-[#2E5481] text-white p-5 rounded-3xl font-black uppercase mt-8 shadow-lg">Save Clinical News</button>
+                <button onClick={handleSaveClinicalNews} disabled={isSending} className="w-full bg-[#2E5481] text-white p-5 rounded-3xl font-black uppercase mt-8 shadow-lg disabled:opacity-60">Save Clinical News</button>
             </div>
 
             <div className="bg-white p-8 rounded-[40px] shadow-xl border border-slate-100 lg:col-span-2 text-left">
@@ -313,14 +734,158 @@ export default function AdminDashboard() {
                       <div key={col} className="space-y-4">
                         <label className="text-[10px] font-black text-red-500 uppercase ml-1 italic tracking-widest">{col} Column</label>
                         {footerLinks[col].map((l, i) => (
-                          <input key={i} value={l} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-bold uppercase outline-none focus:border-[#2E5481]" onChange={e=>{ 
-                            const next = {...footerLinks}; next[col][i] = e.target.value; setFooterLinks(next); 
-                          }} />
+                          <div key={i} className="grid grid-cols-1 gap-2">
+                            <input
+                              value={l.label}
+                              className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-bold uppercase outline-none focus:border-[#2E5481]"
+                              onChange={(e) => {
+                                const next = { ...footerLinks };
+                                next[col][i] = { ...next[col][i], label: e.target.value };
+                                setFooterLinks(next);
+                              }}
+                            />
+                            <input
+                              value={l.href}
+                              className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-[11px] font-bold outline-none focus:border-[#2E5481]"
+                              onChange={(e) => {
+                                const next = { ...footerLinks };
+                                next[col][i] = { ...next[col][i], href: e.target.value };
+                                setFooterLinks(next);
+                              }}
+                            />
+                          </div>
                         ))}
                       </div>
                     ))}
                 </div>
-                <button onClick={handleSaveCMS} className="w-full bg-[#2E5481] text-white p-5 rounded-3xl font-black uppercase mt-8 shadow-lg">Save Footer Links</button>
+                <button onClick={handleSaveFooterLinks} disabled={isSending} className="w-full bg-[#2E5481] text-white p-5 rounded-3xl font-black uppercase mt-8 shadow-lg disabled:opacity-60">Save Footer Links</button>
+            </div>
+
+            {/* --- [DODATO vs Zlatni standard] PAGES EDITOR (ABOUT / LEGAL) --- */}
+            <div className="bg-white p-8 rounded-[40px] shadow-xl border border-slate-100 lg:col-span-2 text-left">
+              <h3 className="text-lg font-black text-[#2E5481] uppercase italic mb-6 flex items-center gap-2">
+                <FileEdit /> Pages Editor
+              </h3>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-500 italic">
+                    About us
+                  </p>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-slate-400">
+                      About image (optional)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="w-full p-3 bg-slate-50 border rounded-2xl text-[10px]"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        try {
+                          const url = await uploadCmsFile(f, "about-image");
+                          setAboutCms((p) => ({ ...p, imageUrl: url }));
+                        } catch (err) {
+                          alert("Upload error: " + (err instanceof Error ? err.message : "Unknown"));
+                        }
+                      }}
+                    />
+                    {aboutCms.imageUrl && (
+                      <div className="space-y-2">
+                        <div className="text-[10px] text-slate-500 normal-case font-bold break-all">
+                          Current: {aboutCms.imageUrl}
+                        </div>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- CMS public URL */}
+                        <img
+                          src={aboutCms.imageUrl}
+                          alt="About image preview"
+                          className="w-full h-28 object-cover rounded-2xl border border-slate-100 bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setAboutCms((p) => ({ ...p, imageUrl: null }))}
+                          className="w-full bg-white border border-slate-200 text-slate-700 p-3 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-50"
+                        >
+                          Remove image
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-slate-400">
+                      About text
+                    </label>
+                    <textarea
+                      value={aboutCms.body}
+                      onChange={(e) => setAboutCms((p) => ({ ...p, body: e.target.value }))}
+                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-900 font-bold h-48 outline-none focus:border-[#2E5481]"
+                      placeholder="Write the About page content…"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSaveAboutPage}
+                    disabled={isSending}
+                    className="w-full bg-[#2E5481] text-white p-5 rounded-2xl font-black uppercase shadow-md disabled:opacity-60"
+                  >
+                    Save About page
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-500 italic">
+                    Legal pages
+                  </p>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase text-slate-400">
+                      Terms &amp; conditions
+                    </label>
+                    <textarea
+                      value={legalCms.termsAndConditions}
+                      onChange={(e) => setLegalCms((p) => ({ ...p, termsAndConditions: e.target.value }))}
+                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-900 font-bold h-28 outline-none focus:border-[#2E5481]"
+                      placeholder="Text for Terms & Conditions…"
+                    />
+
+                    <label className="text-[10px] font-black uppercase text-slate-400">
+                      User agreement
+                    </label>
+                    <textarea
+                      value={legalCms.userAgreement}
+                      onChange={(e) => setLegalCms((p) => ({ ...p, userAgreement: e.target.value }))}
+                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-900 font-bold h-28 outline-none focus:border-[#2E5481]"
+                      placeholder="Text for User Agreement…"
+                    />
+
+                    <label className="text-[10px] font-black uppercase text-slate-400">
+                      Notice to readers
+                    </label>
+                    <textarea
+                      value={legalCms.noticeToReaders}
+                      onChange={(e) => setLegalCms((p) => ({ ...p, noticeToReaders: e.target.value }))}
+                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-900 font-bold h-24 outline-none focus:border-[#2E5481]"
+                      placeholder="Text for Notice to Readers…"
+                    />
+
+                    <label className="text-[10px] font-black uppercase text-slate-400">
+                      Terms of payment
+                    </label>
+                    <textarea
+                      value={legalCms.termsOfPayment}
+                      onChange={(e) => setLegalCms((p) => ({ ...p, termsOfPayment: e.target.value }))}
+                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-900 font-bold h-24 outline-none focus:border-[#2E5481]"
+                      placeholder="Text for Terms of Payment…"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSaveLegalPages}
+                    disabled={isSending}
+                    className="w-full bg-[#2E5481] text-white p-5 rounded-2xl font-black uppercase shadow-md disabled:opacity-60"
+                  >
+                    Save legal pages
+                  </button>
+                </div>
+              </div>
             </div>
         </div>
       )}

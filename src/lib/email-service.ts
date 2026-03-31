@@ -400,6 +400,39 @@ export async function sendCheckoutSessionInitEmails(
   });
 }
 
+// --- [FUNCTIONAL BLOCK: PUBLIC — CONTACT FORM] ---
+// [DODATO vs Zlatni standard] Kontakt forma sa sajta šalje poruku na admin inbox (Resend).
+export interface ContactFormEmailInput {
+  name: string;
+  email: string;
+  message: string;
+}
+
+export async function sendContactFormEmail(
+  input: ContactFormEmailInput,
+): Promise<SingleEmailResult> {
+  const name = escapeHtml(input.name.trim());
+  const email = escapeHtml(input.email.trim());
+  const message = escapeHtml(input.message.trim()).replace(/\n/g, "<br/>");
+
+  const html = `
+    <h2 style="font-family:system-ui,sans-serif;font-size:18px;">Website contact form</h2>
+    <ul style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#374151;">
+      <li><strong>Name:</strong> ${name}</li>
+      <li><strong>Email:</strong> ${email}</li>
+    </ul>
+    <p style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#111827;">
+      ${message}
+    </p>
+  `;
+
+  return await sendHtmlEmail({
+    to: getAdminEmail(),
+    subject: `MedExNews — Contact form message from ${input.name.trim()}`,
+    html,
+  });
+}
+
 // --- [FUNCTIONAL BLOCK: LEGACY `/api/send-email` COMPAT] ---
 /** Shape of JSON historically accepted by `POST /api/send-email`. */
 export interface LegacySendEmailBody {

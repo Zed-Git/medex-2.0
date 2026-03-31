@@ -11,6 +11,17 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "10mb",
     },
   },
+  // [DODATO vs Zlatni standard] next/image mora eksplicitno da dozvoli remote host
+  // ako koristimo Supabase Storage public URL za hero sliku iz CMS-a.
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "jbgfcouecypnusqenvkw.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
+    ],
+  },
 };
 
 export default nextConfig;
