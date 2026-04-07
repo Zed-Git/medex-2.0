@@ -12,7 +12,14 @@
 
 "use client";
 
-import React, { useCallback, useEffect, ReactNode, useState, useMemo } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  ReactNode,
+  useState,
+  useMemo,
+} from "react";
 import { supabase } from "@/lib/supabase"; 
 import { 
   X, Users, Clock, DollarSign, 
@@ -67,9 +74,17 @@ type LegalPagesCms = {
   termsOfPayment: string;
 };
 
+// [IZMENA vs Zlatni standard] Sesija admina ostaje posle refresh-a u istom tabu (sessionStorage).
+// Nije localStorage — kad se tab zatvori, sesija se gubi (malo sigurnije od „zauvek ulogovan“).
+const ADMIN_SESSION_STORAGE_KEY = "medex.admin.session.v1";
+
 export default function AdminDashboard() {
+  const [authReady, setAuthReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [passInput, setPassInput] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginPending, setLoginPending] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [activeTab, setActiveTab] = useState<'patients' | 'settings'>('patients');
   const [requests, setRequests] = useState<PatientRequest[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<PatientRequest | null>(null);
@@ -270,9 +285,80 @@ export default function AdminDashboard() {
     }
   }, [DEFAULT_MEDICINE_NEWS]);
 
+  // [IZMENA vs Zlatni standard] Ranije je posle refresh-a uvek bio logout (useState(false)).
+  // useLayoutEffect čita sessionStorage pre prvog crtanja da smanjimo treperenje ekrana.
+  useLayoutEffect(() => {
+    try {
+      if (sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY) === "1") {
+        setIsLoggedIn(true);
+      }
+    } catch {
+      /* privatni režim / blokiran storage */
+    }
+    setAuthReady(true);
+  }, []);
+
   useEffect(() => {
     if (isLoggedIn) loadAllData();
   }, [isLoggedIn, loadAllData]);
+
+  const persistAdminSession = () => {
+    try {
+      sessionStorage.setItem(ADMIN_SESSION_STORAGE_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const clearAdminSession = () => {
+    try {
+      sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // [IZMENA vs Zlatni standard] PIN se proverava na serveru (/api/admin/verify-pin), ne u React kodu.
+  const tryAdminLogin = async () => {
+    setLoginError(null);
+    setLoginPending(true);
+    try {
+      const res = await fetch("/api/admin/verify-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: passInput }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+
+      if (res.status === 503 && data.error === "pin_not_configured") {
+        setLoginError(
+          "Admin access is not configured on this server (missing PIN).",
+        );
+        return;
+      }
+
+      if (res.ok && data.ok) {
+        persistAdminSession();
+        setIsLoggedIn(true);
+        return;
+      }
+
+      setLoginError("Invalid PIN. Please try again.");
+    } catch {
+      setLoginError("Could not reach the server. Check your connection.");
+    } finally {
+      setLoginPending(false);
+    }
+  };
+
+  const handleAdminLogout = () => {
+    clearAdminSession();
+    setIsLoggedIn(false);
+    setPassInput("");
+  };
 
   /* --- CELINA 2: CMS ACTIONS (CLEAN SYNC) --- */
   const handleSavePrices = async () => {
@@ -466,15 +552,114 @@ export default function AdminDashboard() {
     };
   }, [requests, prices]);
 
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-[#2E5481] flex items-center justify-center p-6 font-sans">
+        <p className="text-white/90 text-sm font-bold uppercase tracking-widest">Loading…</p>
+      </div>
+    );
+  }
+
   if (!isLoggedIn) {
+    const helpEmail = process.env.NEXT_PUBLIC_ADMIN_HELP_EMAIL?.trim();
     return (
       <div className="min-h-screen bg-[#2E5481] flex items-center justify-center p-6 font-sans">
         <div className="bg-white p-10 rounded-[40px] shadow-2xl w-full max-w-md text-center border-t-8 border-[#E31E24]">
           <Lock className="text-[#2E5481] mx-auto mb-6" size={40} />
           <h2 className="text-2xl font-black uppercase italic tracking-tighter text-[#2E5481]">Admin Access</h2>
-          <input type="password" placeholder="PIN..." className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl mb-4 text-center font-bold outline-none" value={passInput} onChange={(e) => setPassInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && passInput === "admin123" && setIsLoggedIn(true)} />
-          <button onClick={() => passInput === "admin123" ? setIsLoggedIn(true) : alert("Invalid PIN")} className="w-full bg-[#E31E24] text-white py-5 rounded-2xl font-black uppercase shadow-xl hover:bg-red-700 transition-all">Authorize</button>
+          <input
+            type="password"
+            placeholder="PIN..."
+            className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl mb-2 text-center font-bold outline-none focus:border-[#2E5481]"
+            value={passInput}
+            onChange={(e) => {
+              setPassInput(e.target.value);
+              if (loginError) setLoginError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !loginPending) void tryAdminLogin();
+            }}
+            autoComplete="current-password"
+          />
+          {loginError ? (
+            <p className="mb-3 text-sm font-semibold text-red-600" role="alert">
+              {loginError}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void tryAdminLogin()}
+            disabled={loginPending}
+            className="w-full bg-[#E31E24] text-white py-5 rounded-2xl font-black uppercase shadow-xl hover:bg-red-700 transition-all disabled:opacity-60 disabled:pointer-events-none"
+          >
+            {loginPending ? "Checking…" : "Authorize"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowForgotPassword(true)}
+            className="mt-4 text-sm font-bold text-[#2E5481] underline underline-offset-2 hover:text-[#1e3a5f]"
+          >
+            Forgot password?
+          </button>
         </div>
+
+        {showForgotPassword ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="forgot-password-title"
+          >
+            <div className="max-w-md rounded-2xl bg-white p-8 shadow-2xl text-left">
+              <h3
+                id="forgot-password-title"
+                className="text-lg font-black uppercase text-[#2E5481]"
+              >
+                Recover admin access
+              </h3>
+              <p className="mt-3 text-sm leading-relaxed text-slate-600">
+                Your PIN is verified on the server and is not visible in the
+                website code. It cannot be reset from this browser. If you lost
+                it, contact whoever hosts or maintains this MedEx site.
+              </p>
+              <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                Operators: set a strong value for{" "}
+                <code className="rounded bg-slate-100 px-1">
+                  MEDEX_ADMIN_DASHBOARD_PIN
+                </code>{" "}
+                in <code className="rounded bg-slate-100 px-1">.env.local</code>{" "}
+                (or your host&apos;s secret env vars), then restart the app.
+                Never use <code className="rounded bg-slate-100 px-1">NEXT_PUBLIC_*</code>{" "}
+                for a PIN — that would expose it to visitors.
+              </p>
+              {helpEmail ? (
+                <p className="mt-3 text-sm">
+                  <span className="font-semibold text-slate-700">Support: </span>
+                  <a
+                    href={`mailto:${helpEmail}`}
+                    className="font-bold text-[#2E5481] underline"
+                  >
+                    {helpEmail}
+                  </a>
+                </p>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">
+                  Optional: set{" "}
+                  <code className="rounded bg-slate-100 px-1">NEXT_PUBLIC_ADMIN_HELP_EMAIL</code>{" "}
+                  in <code className="rounded bg-slate-100 px-1">.env.local</code> to show a
+                  mailto link here.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(false)}
+                className="mt-6 w-full rounded-xl bg-[#2E5481] py-3 text-sm font-black uppercase text-white hover:bg-[#1e3a5f]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -486,7 +671,15 @@ export default function AdminDashboard() {
         <div className="flex gap-4">
           <button onClick={() => setActiveTab('patients')} className={`px-6 py-2 rounded-xl font-bold text-xs uppercase transition-all ${activeTab === 'patients' ? 'bg-white text-[#2E5481]' : 'bg-white/10'}`}>Patients</button>
           <button onClick={() => setActiveTab('settings')} className={`px-6 py-2 rounded-xl font-bold text-xs uppercase transition-all ${activeTab === 'settings' ? 'bg-white text-[#2E5481]' : 'bg-white/10'}`}>CMS Editor</button>
-          <button onClick={() => setIsLoggedIn(false)} className="p-2 bg-red-600/20 hover:bg-red-600 rounded-lg transition-colors"><Lock size={18} /></button>
+          <button
+            type="button"
+            onClick={handleAdminLogout}
+            className="p-2 bg-red-600/20 hover:bg-red-600 rounded-lg transition-colors"
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <Lock size={18} />
+          </button>
         </div>
       </nav>
 

@@ -25,6 +25,10 @@ type PatientRequest = {
 function SuccessPageContent() {
   const searchParams = useSearchParams();
   const requestId = searchParams.get('id');
+  /** Stripe Embedded Checkout dodaje `session_id` na return_url — koristi se za potvrdu ako webhook kasni. */
+  const stripeSessionId = searchParams.get('session_id');
+  /** Sprečava dupli verify za isti par id+session; novi session_id ponovo pokreće verify. */
+  const verifyReturnKeyDone = useRef<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +73,52 @@ function SuccessPageContent() {
 
     fetchRequest();
   }, [requestId]);
+
+  // [DODATO 2026] Fulfillment kao webhook + kratki retry (Stripe ponekad kasni sa `payment_status` u API-ju).
+  useEffect(() => {
+    if (!requestId || !stripeSessionId) return;
+    const verifyKey = `${requestId}:${stripeSessionId}`;
+    if (verifyReturnKeyDone.current === verifyKey) return;
+    verifyReturnKeyDone.current = verifyKey;
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    void (async () => {
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        try {
+          const res = await fetch('/api/checkout/verify-return', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: stripeSessionId,
+              requestId,
+            }),
+          });
+          if (res.ok) {
+            const { data, error: qErr } = await supabase
+              .from('patient_requests')
+              .select('*')
+              .eq('id', requestId)
+              .single();
+            if (!qErr && data) {
+              setRequest(data as PatientRequest);
+            }
+            return;
+          }
+          const j = (await res.json().catch(() => ({}))) as { error?: string };
+          console.warn(
+            '[success] verify-return:',
+            res.status,
+            j.error ?? '',
+            `(attempt ${attempt}/4)`,
+          );
+        } catch (e: unknown) {
+          console.warn('[success] verify-return fetch error', e);
+        }
+        if (attempt < 4) await sleep(2000);
+      }
+    })();
+  }, [requestId, stripeSessionId]);
 
   // After Stripe redirect, the webhook often arrives a second later — first paint can still
   // show status `completed` (report ready) instead of `paid`. Poll briefly until DB catches up.
@@ -206,6 +256,22 @@ function SuccessPageContent() {
             </span>
           </p>
         </header>
+
+        {/* [KOREKCIJA 2026] Posle povratka sa Stripe-a PDF se još generiše u pozadini — korisnik vidi zašto „čeka“. */}
+        {stripeSessionId && !isPaid && (
+          <section
+            className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 shadow-sm"
+            role="status"
+            aria-live="polite"
+          >
+            <p className="font-semibold">Confirming your payment…</p>
+            <p className="mt-1 text-sky-900/90 leading-relaxed">
+              We are finalizing your report on the server. This usually takes a few
+              seconds. This page will refresh automatically. If the status does not
+              change after about a minute, reload the page once.
+            </p>
+          </section>
+        )}
 
         {/* [DODATO 2026 — UX posle Stripe-a] Jasna potvrda na sajtu + upućivanje na mejl (tekst na engleskom). */}
         {isPaid && (

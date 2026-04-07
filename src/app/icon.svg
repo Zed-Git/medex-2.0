@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="MedExNews">
+  <!-- [note.txt] Favicon u bojama logotipa: plava #2E5481, crveni akcent #E31E24 (AI bed~). -->
+  <rect width="32" height="32" rx="8" fill="#2E5481"/>
+  <path
+    fill="#ffffff"
+    d="M7 25V7h4.2l4.8 8.2L20.8 7H25v18h-3.6V12.2L16.1 22h-0.2L10.6 12.2V25H7z"
+  />
+  <rect x="20.5" y="5.5" width="8" height="5.5" rx="1.2" fill="#E31E24"/>
+</svg>

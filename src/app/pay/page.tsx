@@ -8,6 +8,7 @@
 import {
   Suspense,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -33,12 +34,20 @@ function PayPageInner() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Povećaj da se ponovo pokrene Embedded Checkout (npr. posle „Something went wrong“). */
+  const [checkoutEpoch, setCheckoutEpoch] = useState(0);
   const [request, setRequest] = useState<PatientRequest | null>(null);
   const requestRef = useRef<PatientRequest | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const checkoutRef = useRef<StripeEmbeddedCheckout | null>(null);
+  /** Isti client_secret za sve ponovne pozive fetchClientSecret (Stripe + React Strict Mode). */
+  const clientSecretCacheRef = useRef<string | null>(null);
 
   requestRef.current = request;
+
+  useEffect(() => {
+    clientSecretCacheRef.current = null;
+  }, [requestId]);
 
   useEffect(() => {
     if (!requestId) {
@@ -82,13 +91,14 @@ function PayPageInner() {
     !isPaid &&
     (request.status === 'completed' || hasPreview);
 
-  const priceNumber =
-    request?.price === null || request?.price === undefined
-      ? NaN
-      : Number(request.price);
+  // [KOREKCIJA 2026] Ne vezujemo efekat za `price` iz state-a — promena NaN→broj je ponovo pokretala
+  // checkout i Stripe je javljao "Something went wrong" / istek sesije. Cenu čitamo iz requestRef u fetchClientSecret.
 
-  useEffect(() => {
-    if (!canPay || !requestId || !mountRef.current) return;
+  useLayoutEffect(() => {
+    if (!canPay || !requestId) return;
+
+    const mountEl = mountRef.current;
+    if (!mountEl) return;
 
     const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim();
     if (!pk) {
@@ -96,7 +106,6 @@ function PayPageInner() {
       return;
     }
 
-    const mountEl = mountRef.current;
     let destroyed = false;
 
     (async () => {
@@ -106,6 +115,9 @@ function PayPageInner() {
       try {
         const embedded = await stripe.initEmbeddedCheckout({
           fetchClientSecret: async () => {
+            if (clientSecretCacheRef.current) {
+              return clientSecretCacheRef.current;
+            }
             const r = requestRef.current;
             if (!r) throw new Error('Request not loaded');
 
@@ -114,8 +126,10 @@ function PayPageInner() {
               patientName: r.patient_name?.trim() || 'Patient',
               patientEmail: r.patient_email?.trim() || null,
             };
-            if (Number.isFinite(priceNumber) && priceNumber > 0) {
-              body.price = priceNumber;
+            const p =
+              r.price === null || r.price === undefined ? NaN : Number(r.price);
+            if (Number.isFinite(p) && p > 0) {
+              body.price = p;
             }
 
             const res = await fetch('/api/checkout', {
@@ -139,6 +153,7 @@ function PayPageInner() {
             if (!payload.clientSecret) {
               throw new Error('No checkout session from server.');
             }
+            clientSecretCacheRef.current = payload.clientSecret;
             return payload.clientSecret;
           },
         });
@@ -164,7 +179,7 @@ function PayPageInner() {
       checkoutRef.current?.destroy();
       checkoutRef.current = null;
     };
-  }, [canPay, requestId, priceNumber]);
+  }, [canPay, requestId, checkoutEpoch]);
 
   const backHref = requestId
     ? `/success?id=${encodeURIComponent(requestId)}`
@@ -267,12 +282,34 @@ function PayPageInner() {
             Complete your payment below. You will return to your report when the
             transaction is finished.
           </p>
+          {(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '').includes(
+            'pk_test',
+          ) ? (
+            <p className="mt-3 text-[11px] text-slate-500">
+              Test mode: use card{' '}
+              <span className="font-mono">4242 4242 4242 4242</span>, any future
+              expiry, any CVC. Numbers like 1234… are not valid Stripe test cards.
+            </p>
+          ) : null}
         </div>
 
         {error ? (
-          <p className="mb-4 rounded-lg bg-red-50 p-3 text-center text-sm text-red-800">
-            {error}
-          </p>
+          <div className="mb-4 space-y-3 rounded-lg bg-red-50 p-3 text-center text-sm text-red-800">
+            <p>{error}</p>
+            <button
+              type="button"
+              onClick={() => {
+                clientSecretCacheRef.current = null;
+                checkoutRef.current?.destroy();
+                checkoutRef.current = null;
+                setError(null);
+                setCheckoutEpoch((e) => e + 1);
+              }}
+              className="rounded-lg bg-[#2E5481] px-4 py-2 text-xs font-bold uppercase tracking-wide text-white shadow hover:bg-[#1e3a5f]"
+            >
+              Try loading payment again
+            </button>
+          </div>
         ) : null}
 
         <div

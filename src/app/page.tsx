@@ -18,6 +18,38 @@ import {
 // [DODATO] CMS može da override-uje title/description/tag preko site_config.clinical_news (fallback: FEATURED_ANALYSES).
 const NEWS_DATA = FEATURED_ANALYSES;
 
+// [DODATO vs Zlatni standard] “Živi” gradijentni border bez wrapper-a.
+// Trik: 2 background layer-a — (1) unutra “glass” (padding-box), (2) conic-gradient samo na ivici (border-box).
+// Prednost: unutrašnji stil kartice ostaje praktično isti kao pre, menja se samo border.
+const GRADIENT_BORDER_LAYER =
+  'conic-gradient(from 0deg at var(--gx, 50%) var(--gy, 50%), #E31E24, #3b82f6, #1e3a5f, #f87171, #E31E24)';
+function gradientBorderStyle(glassRgba: string, borderPx = 3): React.CSSProperties {
+  return {
+    border: `${borderPx}px solid transparent`,
+    backgroundImage: `linear-gradient(${glassRgba}, ${glassRgba}), ${GRADIENT_BORDER_LAYER}`,
+    backgroundOrigin: 'padding-box, border-box',
+    backgroundClip: 'padding-box, border-box',
+  };
+}
+function setCardGradientFromPointer(e: React.PointerEvent<HTMLElement>) {
+  const el = e.currentTarget;
+  const r = el.getBoundingClientRect();
+  const x = ((e.clientX - r.left) / Math.max(r.width, 1)) * 100;
+  const y = ((e.clientY - r.top) / Math.max(r.height, 1)) * 100;
+  el.style.setProperty('--gx', `${x}%`);
+  el.style.setProperty('--gy', `${y}%`);
+}
+function resetCardGradient(e: React.PointerEvent<HTMLElement>) {
+  e.currentTarget.style.setProperty('--gx', '50%');
+  e.currentTarget.style.setProperty('--gy', '50%');
+}
+
+// [Hydration] Isti fallback na serveru i na prvom client renderu — ne čitati localStorage u useState inicijalizatoru
+// (server nema window → uvek default; klijent bi iz keša dobio druge vrednosti → React hydration error).
+const HERO_FALLBACK_PHOTO = '/doctor.png';
+const HERO_FALLBACK_MESSAGE =
+  'After analysis, we will send report...';
+
 export default function LandingPage() {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [urgency, setUrgency] = useState('Basic');
@@ -36,19 +68,13 @@ export default function LandingPage() {
   const formRef = useRef<HTMLDivElement>(null);
   const [dbPrices, setDbPrices] = useState({ normal: '15', priority: '30' });
   // [DODATO vs Zlatni standard] CMS hero content (doctor photo + floating message) iz site_config.
-  // [IZMENA vs raniji draft] Da se izbegne “flicker” na refresh-u (prvo /doctor.png pa onda CMS slika),
-  // inicijalno čitamo poslednju poznatu vrednost iz localStorage (ako postoji).
-  const [heroDoctorPhotoUrl, setHeroDoctorPhotoUrl] = useState<string>(() => {
-    if (typeof window === 'undefined') return '/doctor.png';
-    return window.localStorage.getItem('medex.hero.doctorPhotoUrl') || '/doctor.png';
-  });
-  const [heroFloatingMessage, setHeroFloatingMessage] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'After analysis, we will send report...';
-    return (
-      window.localStorage.getItem('medex.hero.floatingMessage') ||
-      'After analysis, we will send report...'
-    );
-  });
+  // [IZMENA vs hydration bug] Početno stanje MORA biti isto na SSR i na prvom client paint-u; keš iz localStorage
+  // primenjujemo tek u useEffect (posle hidratacije), pa onda async Supabase.
+  const [heroDoctorPhotoUrl, setHeroDoctorPhotoUrl] =
+    useState<string>(HERO_FALLBACK_PHOTO);
+  const [heroFloatingMessage, setHeroFloatingMessage] = useState<string>(
+    HERO_FALLBACK_MESSAGE,
+  );
   // [DODATO vs Zlatni standard] CMS override za kartice (clinical_news). Ako nema, koristimo FEATURED_ANALYSES.
   const [cmsClinicalNews, setCmsClinicalNews] = useState<
     Array<{ slug: string; tag?: string; title?: string; description?: string }>
@@ -67,6 +93,20 @@ export default function LandingPage() {
       /* ignore */
     }
     window.scrollTo({ top: 0, left: 0 });
+
+    // [IZMENA vs raniji pristup] localStorage ovde (ne u useState) — nema mismatch-a sa HTML sa servera.
+    try {
+      const cachedPhoto = window.localStorage.getItem(
+        'medex.hero.doctorPhotoUrl',
+      );
+      const cachedMsg = window.localStorage.getItem(
+        'medex.hero.floatingMessage',
+      );
+      if (cachedPhoto?.trim()) setHeroDoctorPhotoUrl(cachedPhoto.trim());
+      if (cachedMsg?.trim()) setHeroFloatingMessage(cachedMsg.trim());
+    } catch {
+      /* privatni režim / blokiran storage */
+    }
 
     const fetchConfig = async () => {
       const { data } = await supabase.from("site_config").select("*").eq('key', 'pricing').single();
@@ -194,6 +234,7 @@ export default function LandingPage() {
   }
 
   // [DODATO vs Zlatni standard] onSubmit + preventDefault: zaustavlja “submit refresh” tok koji može obrisati vrednosti inputa.
+
   async function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -280,12 +321,22 @@ export default function LandingPage() {
       {/* [DODATO vs Zlatni standard] Glassmorphism: veći kontejneri dobijaju bg-white/80 + backdrop-blur. */}
       <section className="max-w-7xl mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
         <div className="lg:col-span-3 flex flex-col gap-4">
-            <motion.div onClick={scrollToForm} whileHover={{ y: -5 }} className="cursor-pointer bg-[#2E5481] p-6 rounded-[35px] text-white shadow-2xl flex flex-col justify-center text-center relative h-64 overflow-hidden border-b-4 border-blue-900">
-              <h3 className="text-[#E31E24] text-4xl font-black italic mb-1 uppercase tracking-tighter shadow-black drop-shadow-md">SUBMIT</h3> 
-              <p className="text-[11px] font-black uppercase leading-tight mb-4 tracking-wider">Your Cardiology<br/>Questions,Results,<br/>Dilemmas...?</p>
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-[10px] font-black text-[#E31E24] uppercase italic">click to start</span>
-                <ArrowDown className="text-[#E31E24] animate-bounce" size={18} />
+            {/* [IZMENA vs Zlatni standard] Spoljašnji omotač: tanki “ram”; ista logika kao MEDICINE kartice (setCardGradientFromPointer). */}
+            <motion.div
+              onClick={scrollToForm}
+              onPointerMove={setCardGradientFromPointer}
+              onPointerLeave={resetCardGradient}
+              whileHover={{ y: -5 }}
+              className="cursor-pointer rounded-[35px] p-[3px] shadow-2xl h-64 relative overflow-hidden"
+              style={gradientBorderStyle('rgba(46,84,129,1)', 3)}
+            >
+              <div className="rounded-[32px] bg-[#2E5481] p-6 text-white flex flex-col justify-center text-center h-full relative overflow-hidden border-b-4 border-blue-900">
+                <h3 className="text-[#E31E24] text-4xl font-black italic mb-1 uppercase tracking-tighter shadow-black drop-shadow-md">SUBMIT</h3>
+                <p className="text-[11px] font-black uppercase leading-tight mb-4 tracking-wider">Your Cardiology<br/>Questions,Results,<br/>Dilemmas...?</p>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-[10px] font-black text-[#E31E24] uppercase italic">click to start</span>
+                  <ArrowDown className="text-[#E31E24] animate-bounce" size={18} />
+                </div>
               </div>
             </motion.div>
 
@@ -328,7 +379,21 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {mergedNews.map((news, idx) => (
               // [IZMENA vs raniji draft] Uklonjen whileInView (IntersectionObserver) jer je pravio “praznu sekciju” na hard refresh-u kod nekih browsera.
-              <motion.div key={news.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }} whileHover={{ y: -10 }} className="bg-white/80 backdrop-blur-md p-8 rounded-[35px] shadow-md border border-white/50 text-left hover:shadow-2xl transition-all cursor-default">
+              // [DODATO vs Gold 5.3.0] Samo border je gradijent i “živi” na pointer move.
+              // [VAŽNO] Unutrašnji layout/typography/spacing ostaje kao u Gold-u (isti className), jer nema wrapper-a.
+              <motion.div
+                key={news.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.1 }}
+                whileHover={{ y: -10 }}
+                onPointerMove={setCardGradientFromPointer}
+                onPointerLeave={resetCardGradient}
+                className="backdrop-blur-md p-8 rounded-[35px] shadow-md text-left hover:shadow-2xl transition-all cursor-default"
+                // [KOREKCIJA vs eksperiment] “Unutra” vraćamo na vizuelno belo kao pre (veća neprozirnost),
+                // dok gradijent ostaje samo na borderu.
+                style={gradientBorderStyle('rgba(255,255,255,0.95)', 3)}
+              >
                 <span className="text-[#E31E24] font-black text-[9px] tracking-widest uppercase">{news.tag}</span>
                 <h3 className="text-xl font-black text-slate-800 mt-2 mb-3 uppercase leading-tight">{news.title}</h3>
                 <p className="text-slate-500 text-xs leading-relaxed mb-6 font-medium">{news.description}</p>
@@ -399,6 +464,7 @@ export default function LandingPage() {
                     placeholder="John Smith"
                   />
                 </div>
+                {/* [IZMENA vs Zlatni standard + note.txt] Placeholderi email/telefon — generički engleski tekst, ne lični primer. */}
                 <div className="border-b-2 border-slate-50 pb-2 flex flex-col">
                   <label className="text-[10px] font-black uppercase text-slate-400 italic mb-1">Email <span className="text-red-500">*</span></label>
                   <input
@@ -409,7 +475,7 @@ export default function LandingPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     onFocus={() => setFormValidationError(null)}
                     className="w-full outline-none font-bold text-slate-800 p-0 text-sm bg-transparent"
-                    placeholder="mdzdravko@yahoo.com"
+                    placeholder="Your e-mail address"
                   />
                 </div>
                 <div className="border-b-2 border-slate-50 pb-2 flex flex-col">
@@ -420,7 +486,7 @@ export default function LandingPage() {
                     onChange={(e) => setPhone(e.target.value)}
                     onFocus={() => setFormValidationError(null)}
                     className="w-full outline-none font-bold text-slate-800 p-0 text-sm bg-transparent"
-                    placeholder="+381 6..."
+                    placeholder="Enter your phone number"
                   />
                 </div>
                 <div className="border-b-2 border-slate-50 pb-2 flex flex-col">

@@ -75,13 +75,25 @@ function getFromAddress(): string {
   // [ZLATNI STANDARD + DODATO] Ponekad se u .env.local stavi vrednost u navodnicima.
   // Next obično učita bez spoljnih navodnika, ali ako korisnik zalepi ceo string sa "",
   // trim pomaže da "from" ostane validan za Resend.
-  const raw = process.env.RESEND_FROM ?? "Medex 2.0 <noreply@medexnews.com>";
+  // [KOREKCIJA 2026] Podrazumevani "from" je medexnews.com — mora se poklapati sa domenom verifikovanim u Resend dashboard-u.
+  // (Pogrešan domen daje 403: "domain is not verified" i neće otići ni pacijent ni admin mejl.)
+  const raw = process.env.RESEND_FROM ?? "MedExNews <noreply@medexnews.com>";
   return raw.trim().replace(/^["']|["']$/g, "");
 }
 
-/** Primary administrator inbox for operational notices. */
+/**
+ * Jedini zvanični inbox za sve administratorske obaveštenja (nova prijava, plaćanje, kontakt forma, itd.).
+ * [IZMENA vs Zlatni standard] Prvo čita NEXT_PUBLIC_ADMIN_EMAIL (traženo u konfiguraciji), pa MEDEX_ADMIN_EMAIL (stari alias), pa default.
+ * Napomena: pacijentovi mejlovi i dalje idu na patientEmail — ova funkcija utiče samo na `to` za admin kopije.
+ */
 function getAdminEmail(): string {
-  return process.env.MEDEX_ADMIN_EMAIL ?? "mdzdravko@gmail.com";
+  const trimQ = (v: string | undefined) =>
+    v?.trim().replace(/^["']|["']$/g, "") ?? "";
+  const fromPublic = trimQ(process.env.NEXT_PUBLIC_ADMIN_EMAIL);
+  if (fromPublic) return fromPublic;
+  const legacy = trimQ(process.env.MEDEX_ADMIN_EMAIL);
+  if (legacy) return legacy;
+  return "medexnews@gmail.com";
 }
 
 /**
@@ -164,6 +176,7 @@ async function sendHtmlEmail(options: {
   to: string;
   subject: string;
   html: string;
+  replyTo?: string;
 }): Promise<SingleEmailResult> {
   const client = getResendClient();
   if (!client) {
@@ -176,6 +189,9 @@ async function sendHtmlEmail(options: {
       to: options.to,
       subject: options.subject,
       html: options.html,
+      // [note.txt] Ključno: kad admin klikne "Reply" u mailbox-u, odgovor ide na pošiljaoca (Reply-To),
+      // a ne na "from" (noreply@...), koji često ne prima poštu.
+      replyTo: options.replyTo,
     });
 
     if (error) {
@@ -236,7 +252,8 @@ export async function sendRequestSubmissionEmails(
 
   const adminResult = await sendHtmlEmail({
     to: getAdminEmail(),
-    subject: "Medex 2.0 — New cardiology analysis request (expert review required)",
+    subject:
+      "Medex 2.0 — New cardiology analysis request (expert review required)",
     html: buildAdminNewRequestHtml(input),
   });
 
@@ -414,9 +431,18 @@ export async function sendContactFormEmail(
   const name = escapeHtml(input.name.trim());
   const email = escapeHtml(input.email.trim());
   const message = escapeHtml(input.message.trim()).replace(/\n/g, "<br/>");
+  const senderRaw = input.email.trim();
+  // [note.txt] Rezerva ako neki klijent ignoriše Reply-To zaglavlje: vidljiv mailto u telu (UI mejla ostaje engleski).
+  const mailtoHref = escapeHtml(
+    `mailto:${senderRaw}?subject=${encodeURIComponent("Re: MedExNews contact form")}`,
+  );
 
   const html = `
     <h2 style="font-family:system-ui,sans-serif;font-size:18px;">Website contact form</h2>
+    <p style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.5;color:#111827;">
+      <strong>Reply to the sender:</strong> use <em>Reply</em> in your mail app (it should address the visitor),
+      or <a href="${mailtoHref}">open a new message to this address</a>.
+    </p>
     <ul style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#374151;">
       <li><strong>Name:</strong> ${name}</li>
       <li><strong>Email:</strong> ${email}</li>
@@ -430,6 +456,8 @@ export async function sendContactFormEmail(
     to: getAdminEmail(),
     subject: `MedExNews — Contact form message from ${input.name.trim()}`,
     html,
+    // [note.txt] Reply ide direktno na e-mail pošiljaoca sa forme.
+    replyTo: input.email.trim(),
   });
 }
 

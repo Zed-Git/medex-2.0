@@ -17,6 +17,10 @@ import { getNextAppPublicUrl } from "@/lib/public-app-url";
 import { resolveCheckoutPriceUsd } from "@/lib/checkout-pricing";
 import { getStripe } from "@/lib/stripe-server";
 
+// [KOREKCIJA 2026] Embedded Checkout često pozove fetchClientSecret više puta; idempotencija vraća istu sesiju,
+// ali bi inače poslali više istih admin mejlova. Jedan mejl po Stripe session.id po životu procesa.
+const checkoutSessionInitEmailSent = new Set<string>();
+
 // --- [FUNCTIONAL BLOCK: STRIPE] ---
 // [DODATO vs Zlatni Standard] Kreiranje sesije ide preko getStripe() iz @/lib/stripe-server
 // da se u development-u može koristiti STRIPE_TEST_SECRET_KEY (kartica 4242).
@@ -116,14 +120,18 @@ export async function POST(request: Request) {
 
     // --- [FUNCTIONAL BLOCK: OPTIONAL E-MAILS (NON-BLOCKING)] ---
     try {
-      await sendCheckoutSessionInitEmails({
-        patientName: patientName.trim(),
-        requestId,
-        priceUsd: price,
-        patientEmail,
-        stripeSessionId: session.id,
-      });
+      if (!checkoutSessionInitEmailSent.has(session.id)) {
+        checkoutSessionInitEmailSent.add(session.id);
+        await sendCheckoutSessionInitEmails({
+          patientName: patientName.trim(),
+          requestId,
+          priceUsd: price,
+          patientEmail,
+          stripeSessionId: session.id,
+        });
+      }
     } catch (emailErr: unknown) {
+      checkoutSessionInitEmailSent.delete(session.id);
       console.error("[checkout] Checkout notification e-mail error (non-fatal):", emailErr);
     }
 
