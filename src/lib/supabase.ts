@@ -2,24 +2,48 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-// --- 1. Učitavanje iz .env.local ---
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// [note.txt — ENV] U Next-u URL mora biti NEXT_PUBLIC_SUPABASE_URL (ne "SUPABASE_URL"); vidi .env.example.
 
-// --- 2. Validacija (obavezno) ---
-if (!supabaseUrl) {
-  throw new Error("❌ Supabase URL nije pronađen! Proveri NEXT_PUBLIC_SUPABASE_URL u .env.local");
+let supabaseEnvWarned = false;
+
+function isValidHttpUrl(s: string): boolean {
+  try {
+    const u = new URL(s.trim());
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
-if (!supabaseAnonKey) {
-  throw new Error("❌ Supabase Anon Key nije pronađen! Proveri NEXT_PUBLIC_SUPABASE_ANON_KEY u .env.local");
+const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
+const rawKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? "";
+
+const urlOk = isValidHttpUrl(rawUrl);
+const keyOk = rawKey.length > 0;
+
+/**
+ * [IZMENA — note.txt / ENV] Ranije: throw na load ako fali env → `next build` i prerender padaju
+ * čim je u .env.local pogrešan URL (npr. slučajni tekst). Sada: sintaksički validan placeholder
+ * da se build završi; u konzoli se jednom upozorava. Bez ispravnog .env.local CMS/fetch neće raditi.
+ */
+const supabaseUrl = urlOk
+  ? rawUrl
+  : "https://placeholder.invalid.supabase.co";
+const supabaseAnonKey = urlOk && keyOk
+  ? rawKey
+  : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiJ9.placeholder";
+
+if (!urlOk || !keyOk) {
+  if (!supabaseEnvWarned) {
+    supabaseEnvWarned = true;
+    console.warn(
+      "[supabase] NEXT_PUBLIC_SUPABASE_URL ili NEXT_PUBLIC_SUPABASE_ANON_KEY nisu ispravno podešeni — koristim placeholder da build/prerender ne padaju. Popuni .env.local (puni https://....supabase.co URL i anon key).",
+    );
+  }
 }
 
-// --- 3. Kreiranje klijenta ---
-// Ovo je jedini ispravan način da Next.js radi sa Supabase-om
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: false, // server actions ne koriste sesije
+    persistSession: false,
   },
 });
-

@@ -13,15 +13,12 @@
 
 // --- [FUNCTIONAL BLOCK: IMPORTS] ---
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { sendRequestSubmissionEmails } from "@/lib/email-service";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
-// --- [FUNCTIONAL BLOCK: SUPABASE INIT] ---
-// Service role key: required to insert from this trusted API route only (never expose to browser).
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+// --- [FUNCTIONAL BLOCK: SUPABASE] ---
+// [IZMENA — note.txt / ENV] Ranije: createClient na nivou modula → `next build` puca ako je
+// NEXT_PUBLIC_SUPABASE_URL u .env.local pogrešan (npr. placeholder tekst). Sada: klijent tek u POST handler-u.
 
 // --- [FUNCTIONAL BLOCK: POST HANDLER] ---
 export async function POST(req: NextRequest) {
@@ -54,6 +51,7 @@ export async function POST(req: NextRequest) {
 
     // --- [SUB-BLOCK: INSERT INTO DATABASE] ---
     // [SCHEMA NOTE] Do not insert `price` unless the column exists in Supabase.
+    const supabase = getSupabaseAdmin();
     const { data: insertData, error: insertError } = await supabase
       .from("patient_requests")
       .insert({

@@ -10,6 +10,11 @@
 //   NEXT_PUBLIC_APP_URL=https://your-next-app.vercel.app
 // Fallbacks: NEXT_PUBLIC_BASE_URL, then VERCEL_URL (preview/production), then localhost.
 // We intentionally avoid defaulting to NEXT_PUBLIC_SITE_URL for app links.
+//
+// [note.txt — deploy na Vercel, objašnjenje]
+// • VERCEL_URL Vercel automatski inject-uje — obično NE moraš ništa da menjaš posle deploy-a da bi linkovi radili.
+// • Ako želiš uvek isti HTTPS URL u mejlovima (npr. custom domen umesto *.vercel.app), postavi NEXT_PUBLIC_APP_URL.
+// • Za lokal: NEXT_PUBLIC_BASE_URL=http://localhost:3000 (ili oslanjaj se na default localhost u kodu).
 // ---
 
 /**

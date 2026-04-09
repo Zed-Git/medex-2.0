@@ -19,6 +19,54 @@ import Stripe from "stripe";
 
 let cachedStripe: Stripe | null = null;
 
+/** Jednokratno upozorenje da pk_* i sk_* budu u istom Stripe režimu (test vs live). */
+let publishableSecretAlignmentWarned = false;
+
+/**
+ * [DODATO — note.txt / provera .env] Isti “efektivni” izbor kao resolveStripeSecretKey, ali bez bacanja greške.
+ * Koristi se samo za dijagnostiku usklađenosti sa NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY.
+ */
+function peekEffectiveStripeSecretPrefix(): string | null {
+  const isDev = process.env.NODE_ENV === "development";
+  const testKey = process.env.STRIPE_TEST_SECRET_KEY?.trim();
+  const primaryKey = process.env.STRIPE_SECRET_KEY?.trim();
+  if (isDev && testKey) return testKey;
+  if (primaryKey) return primaryKey;
+  if (testKey) return testKey;
+  return null;
+}
+
+/**
+ * [DODATO — note.txt] Ako je pk_test uz sk_live (ili obrnuto), plaćanje / Checkout sesije pucaju ili ponašanje je nepredvidivo.
+ * Lokalno: sa STRIPE_TEST_SECRET_KEY obično si OK i sa pk_test; problem je production build ili dev bez test tajnog ključa.
+ */
+function warnIfStripePublishableAndSecretModesDiverge(): void {
+  if (publishableSecretAlignmentWarned) return;
+  publishableSecretAlignmentWarned = true;
+
+  const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim() ?? "";
+  const sk = peekEffectiveStripeSecretPrefix();
+  if (!pk || !sk) return;
+
+  const pubTest = pk.startsWith("pk_test_");
+  const pubLive = pk.startsWith("pk_live_");
+  const secTest = sk.startsWith("sk_test_");
+  const secLive = sk.startsWith("sk_live_");
+
+  if (pubTest && secLive) {
+    console.warn(
+      "[stripe-server] Neklapanje Stripe režima: publishable je pk_test_* a efektivni tajni ključ je sk_live_* (u produkciji uvek sk_live). " +
+        "Moraš staviti NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_* za produkciju, ili za lokal test koristi STRIPE_TEST_SECRET_KEY=sk_test_* i pk_test_* zajedno. Vidi .env.example.",
+    );
+  }
+  if (pubLive && secTest) {
+    console.warn(
+      "[stripe-server] Neklapanje Stripe režima: publishable je pk_live_* a efektivni tajni ključ je sk_test_*. " +
+        "Koristi oba test ili oba live. Vidi .env.example.",
+    );
+  }
+}
+
 /**
  * Bira tajni ključ: u development-u, ako postoji STRIPE_TEST_SECRET_KEY, koristi ga.
  * Inače STRIPE_SECRET_KEY (obično live u produkciji).
@@ -80,6 +128,7 @@ export function resolveStripeWebhookSecret(): string {
 /** Jedna Stripe instanca po procesu (isti apiVersion kao webhook). */
 export function getStripe(): Stripe {
   if (!cachedStripe) {
+    warnIfStripePublishableAndSecretModesDiverge();
     cachedStripe = new Stripe(resolveStripeSecretKey(), {
       apiVersion: "2026-02-25.clover",
     });

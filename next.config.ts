@@ -15,10 +15,14 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "10mb",
     },
+    // [note.txt — performanse] Tree-shake ikona iz lucide-react (manji JS na mobilnom).
+    optimizePackageImports: ["lucide-react"],
   },
   // [DODATO vs Zlatni standard] next/image mora eksplicitno da dozvoli remote host
   // ako koristimo Supabase Storage public URL za hero sliku iz CMS-a.
   images: {
+    // [note.txt — performanse] Moderni formati kad browser podržava (manji fajl = brže učitavanje).
+    formats: ["image/avif", "image/webp"],
     remotePatterns: [
       {
         protocol: "https",
