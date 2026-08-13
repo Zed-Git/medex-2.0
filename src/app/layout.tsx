@@ -114,6 +114,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        {/* Preload the full-page background image so the browser fetches it
+            as early as possible — CSS background-images are not auto-preloaded,
+            which makes them a common hidden LCP bottleneck. */}
+        <link rel="preload" as="image" href="/medback1.webp" type="image/webp" />
+      </head>
       <body className="antialiased bg-slate-50 text-slate-900">
         <GoogleAnalytics />
         {/* [DODATO — note.txt SEO] JSON-LD sme i u body; Google ga indeksira. Izbegavamo ručni <head> jer Next upravlja meta tagovima. */}

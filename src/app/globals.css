@@ -17,4 +17,11 @@ html {
   text-size-adjust: 100%;
 }
 
+/* Placeholder contrast fix: browser default is ~40% opacity which fails WCAG AA (4.5:1).
+   slate-500 (#64748b) on white gives ~4.6:1 — passes for small text inputs. */
+::placeholder {
+  color: #64748b;
+  opacity: 1; /* Firefox reduces opacity by default; override to match other browsers */
+}
+
 

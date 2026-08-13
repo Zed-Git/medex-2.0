@@ -1,7 +1,5 @@
 "use client";
 
-// [DODATO — Turnstile] Cloudflare Turnstile CAPTCHA widget
-import { Turnstile } from "@marsidev/react-turnstile";
 import { useState, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -10,6 +8,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import type { AnamnesisData } from "@/components/RequestAnalysisForm";
+
+// Cloudflare Turnstile — third-party widget, only rendered when siteKey is configured.
+// Dynamic + ssr:false avoids bundling it into the initial chunk and prevents SSR issues.
+const Turnstile = dynamic(
+  () => import("@marsidev/react-turnstile").then((m) => m.Turnstile),
+  { ssr: false },
+);
 
 // [note.txt — performanse] Teške komponente tek kad treba: manji početni bundle na mobilnom.
 const FileUpload = dynamic(
@@ -770,7 +775,7 @@ export default function LandingPage() {
                 <div className="bg-slate-50 rounded-2xl p-6 border-2 border-dashed border-slate-200 text-center hover:border-[#2E5481] transition-all">
                   <FileUpload onFileSelect={(f) => setFile(f)} />
                   <div className="mt-4">
-                    <p className="text-[8px] font-bold text-slate-400 uppercase italic">
+                    <p className="text-[8px] font-bold text-slate-500 uppercase italic">
                       PNG, JPG, PDF or MP4 | Max Size: 50MB
                     </p>
                   </div>
