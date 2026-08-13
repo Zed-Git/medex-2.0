@@ -432,7 +432,16 @@ export default function LandingPage() {
       <nav className="sticky top-0 z-50 w-full bg-[#2E5481] border-b-4 border-[#E31E24] px-6 pb-4 pt-[max(1rem,env(safe-area-inset-top))] md:px-12 md:pb-4 text-white shadow-xl">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div
+            role="button"
+            tabIndex={0}
+            aria-label="Scroll to top"
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }
+            }}
             className="cursor-pointer flex flex-col min-w-max"
           >
             {/* --- LOGO (RESTAURIRANO) --- */}
@@ -448,9 +457,9 @@ export default function LandingPage() {
             <div className="h-1 w-full bg-[#E31E24] mt-1"></div>
           </div>
           <div className="hidden lg:flex flex-col items-center flex-1 mx-8 text-center leading-tight">
-            <h2 className="text-2xl font-black uppercase tracking-tight text-white leading-none">
+            <h1 className="text-2xl font-black uppercase tracking-tight text-white leading-none">
               Science and Cardiology Analysis
-            </h2>
+            </h1>
             <p className="text-xs uppercase tracking-widest font-bold text-red-100 opacity-95 italic mt-1 leading-none">
               An Expert Review of Evidence-Based, Personalized Medicine, and
               AI{" "}
@@ -473,9 +482,9 @@ export default function LandingPage() {
             style={gradientBorderStyle("rgba(46,84,129,1)", 3)}
           >
             <div className="rounded-[32px] bg-[#2E5481] p-6 text-white flex flex-col justify-center text-center h-full relative overflow-hidden border-b-4 border-blue-900">
-              <h3 className="text-[#E31E24] text-4xl font-black italic mb-1 uppercase tracking-tighter shadow-black drop-shadow-md">
+              <h2 className="text-[#E31E24] text-4xl font-black italic mb-1 uppercase tracking-tighter shadow-black drop-shadow-md">
                 SUBMIT
-              </h3>
+              </h2>
               <p className="text-[11px] font-black uppercase leading-tight mb-4 tracking-wider">
                 Your Cardiology
                 <br />
@@ -499,9 +508,9 @@ export default function LandingPage() {
         </div>
 
         <div className="lg:col-span-3 bg-white/80 backdrop-blur-md border border-white/50 p-8 rounded-[35px] shadow-xl h-96 flex flex-col justify-center text-center relative overflow-hidden">
-          <h3 className="text-xl font-black text-[#2E5481] uppercase border-b-4 border-[#E31E24] pb-1 inline-block tracking-tighter italic">
+          <h2 className="text-xl font-black text-[#2E5481] uppercase border-b-4 border-[#E31E24] pb-1 inline-block tracking-tighter italic">
             HOW IT WORKS
-          </h3>
+          </h2>
           <div className="space-y-6 mt-6 text-left">
             {[
               { id: "1", t: "Your Requests" },
@@ -586,7 +595,7 @@ export default function LandingPage() {
                 {/* [IZMENA vs raniji draft] Link vodi na posebnu stranicu (ne u okviru landing-a). */}
                 <Link
                   href={`/analysis/${encodeURIComponent(news.slug)}`}
-                  className="text-[#2E5481] font-black text-[10px] uppercase border-b-2 border-slate-100 hover:border-[#E31E24] transition-all inline-flex items-center gap-1 italic"
+                  className="text-[#2E5481] font-black text-[10px] uppercase border-b-2 border-slate-100 hover:border-[#E31E24] transition-all inline-flex items-center gap-1 italic py-2 min-h-[44px]"
                 >
                   Read analysis <ArrowRight size={14} />
                 </Link>
@@ -627,7 +636,7 @@ export default function LandingPage() {
                   <p className="text-[8px] font-black text-white/90 uppercase italic mt-1 tracking-widest leading-none">
                     YOU PAY AFTER REPORT!
                   </p>
-                  <p className="text-[7px] font-bold text-white/50 uppercase mt-1 leading-none italic">
+                  <p className="text-[7px] font-bold text-white/75 uppercase mt-1 leading-none italic">
                     No Need Credit Card Now...
                   </p>
                 </div>
@@ -661,10 +670,11 @@ export default function LandingPage() {
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">
                 <div className="border-b-2 border-slate-50 pb-2 flex flex-col">
-                  <label className="text-[10px] font-black uppercase text-slate-400 italic mb-1">
+                  <label htmlFor="patient-name" className="text-[10px] font-black uppercase text-slate-600 italic mb-1">
                     Full Name <span className="text-red-500">*</span>
                   </label>
                   <input
+                    id="patient-name"
                     name="patientName"
                     required
                     value={patientName}
@@ -676,10 +686,11 @@ export default function LandingPage() {
                 </div>
                 {/* [IZMENA vs Zlatni standard + note.txt] Placeholderi email/telefon — generički engleski tekst, ne lični primer. */}
                 <div className="border-b-2 border-slate-50 pb-2 flex flex-col">
-                  <label className="text-[10px] font-black uppercase text-slate-400 italic mb-1">
+                  <label htmlFor="patient-email" className="text-[10px] font-black uppercase text-slate-600 italic mb-1">
                     Email <span className="text-red-500">*</span>
                   </label>
                   <input
+                    id="patient-email"
                     name="email"
                     type="email"
                     required
@@ -691,10 +702,11 @@ export default function LandingPage() {
                   />
                 </div>
                 <div className="border-b-2 border-slate-50 pb-2 flex flex-col">
-                  <label className="text-[10px] font-black uppercase text-slate-400 italic mb-1">
+                  <label htmlFor="patient-phone" className="text-[10px] font-black uppercase text-slate-600 italic mb-1">
                     Phone Number
                   </label>
                   <input
+                    id="patient-phone"
                     name="phone"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
@@ -704,10 +716,11 @@ export default function LandingPage() {
                   />
                 </div>
                 <div className="border-b-2 border-slate-50 pb-2 flex flex-col">
-                  <label className="text-[10px] font-black uppercase text-slate-400 italic mb-1">
+                  <label htmlFor="urgency-level" className="text-[10px] font-black uppercase text-slate-600 italic mb-1">
                     Urgency Level <span className="text-red-500">*</span>
                   </label>
                   <select
+                    id="urgency-level"
                     name="urgency"
                     required
                     value={urgency}
@@ -852,42 +865,42 @@ export default function LandingPage() {
       <footer className="bg-[#2E5481] pt-16 pb-8 px-6 md:px-12 text-white border-t-8 border-[#E31E24] text-left">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
           <div>
-            <h4 className="font-black text-red-400 uppercase tracking-widest text-[10px] mb-6 italic">
+            <h3 className="font-black text-red-400 uppercase tracking-widest text-[10px] mb-6 italic">
               Company
-            </h4>
-            <ul className="space-y-3 text-[10px] font-black uppercase tracking-widest opacity-80 italic leading-none">
+            </h3>
+            <ul className="space-y-1 text-[10px] font-black uppercase tracking-widest opacity-80 italic leading-none">
               {/* [IZMENA vs Zlatni standard] Footer linkovi vode na stvarne stranice (app router). */}
               <li>
-                <Link href="/about">ABOUT US</Link>
+                <Link href="/about" className="block py-2 min-h-[44px] flex items-center">ABOUT US</Link>
               </li>
               <li>
-                <Link href="/contact">CONTACT US</Link>
+                <Link href="/contact" className="block py-2 min-h-[44px] flex items-center">CONTACT US</Link>
               </li>
             </ul>
           </div>
           <div>
-            <h4 className="font-black text-red-400 uppercase tracking-widest text-[10px] mb-6 italic">
+            <h3 className="font-black text-red-400 uppercase tracking-widest text-[10px] mb-6 italic">
               Legal
-            </h4>
-            <ul className="space-y-3 text-[10px] font-black uppercase tracking-widest opacity-80 italic leading-none">
+            </h3>
+            <ul className="space-y-1 text-[10px] font-black uppercase tracking-widest opacity-80 italic leading-none">
               <li>
-                <Link href="/terms-and-conditions">TERMS & CONDITIONS</Link>
+                <Link href="/terms-and-conditions" className="block py-2 min-h-[44px] flex items-center">TERMS & CONDITIONS</Link>
               </li>
               <li>
-                <Link href="/user-agreement">USER AGREEMENT</Link>
+                <Link href="/user-agreement" className="block py-2 min-h-[44px] flex items-center">USER AGREEMENT</Link>
               </li>
             </ul>
           </div>
           <div>
-            <h4 className="font-black text-red-400 uppercase tracking-widest text-[10px] mb-6 italic">
+            <h3 className="font-black text-red-400 uppercase tracking-widest text-[10px] mb-6 italic">
               Resources
-            </h4>
-            <ul className="space-y-3 text-[10px] font-black uppercase tracking-widest opacity-80 italic leading-none">
+            </h3>
+            <ul className="space-y-1 text-[10px] font-black uppercase tracking-widest opacity-80 italic leading-none">
               <li>
-                <Link href="/notice-to-readers">NOTICE TO READERS</Link>
+                <Link href="/notice-to-readers" className="block py-2 min-h-[44px] flex items-center">NOTICE TO READERS</Link>
               </li>
               <li>
-                <Link href="/terms-of-payment">TERMS OF PAYMENT</Link>
+                <Link href="/terms-of-payment" className="block py-2 min-h-[44px] flex items-center">TERMS OF PAYMENT</Link>
               </li>
             </ul>
           </div>
@@ -901,7 +914,7 @@ export default function LandingPage() {
               </sup>
             </div>
 
-            <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mt-4 leading-none">
+            <p className="text-[10px] uppercase font-black text-slate-300 tracking-widest mt-4 leading-none">
               © 2026 MedExNews | ALL RIGHTS RESERVED | MedExNews does not
               provide medical advices, diagnosis or treatment. See additional
               Information.
@@ -913,13 +926,19 @@ export default function LandingPage() {
       {/* ANAMNESIS MODAL */}
       <AnimatePresence>
         {showAnamneza && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="anamnesis-modal-title"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          >
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowAnamneza(false)}
               className="absolute inset-0 bg-[#2E5481]/90 backdrop-blur-sm"
+              aria-hidden="true"
             />
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -929,11 +948,13 @@ export default function LandingPage() {
             >
               <button
                 type="button"
+                aria-label="Close medical anamnesis form"
                 onClick={() => setShowAnamneza(false)}
-                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-[#E31E24] z-50"
+                className="absolute top-6 right-6 p-3 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-[#E31E24] z-50"
               >
                 <X size={32} />
               </button>
+              <span id="anamnesis-modal-title" className="sr-only">Medical Anamnesis Form</span>
               <div className="p-2">
                 <RequestAnalysisForm
                   onSave={(data) => {
