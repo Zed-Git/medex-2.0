@@ -1,17 +1,18 @@
-import './globals.css'
-import type { Metadata, Viewport } from 'next'
-import { SeoJsonLd } from '@/components/SeoJsonLd'
-import { getSiteUrl } from '@/lib/site-url'
+import "./globals.css";
+import type { Metadata, Viewport } from "next";
+import { SeoJsonLd } from "@/components/SeoJsonLd";
+import { getSiteUrl } from "@/lib/site-url";
+import GoogleAnalytics from "@/components/GoogleAnalytics";
 
 /**
  * [Zadržano iz Zlatnog standarda] Viewport + theme-color — ne menjamo ponašanje na mobilnom.
  */
 export const viewport: Viewport = {
-  width: 'device-width',
+  width: "device-width",
   initialScale: 1,
-  viewportFit: 'cover',
-  themeColor: '#2E5481',
-}
+  viewportFit: "cover",
+  themeColor: "#2E5481",
+};
 
 /**
  * [IZMENA / proširenje vs Zlatni standard — note.txt SEO]
@@ -20,32 +21,32 @@ export const viewport: Viewport = {
  * ključne reči, opciona Google Search Console verifikacija preko env.
  * Svi stringovi vidljivi korisnicima sajta = engleski.
  */
-const siteUrl = getSiteUrl()
+const siteUrl = getSiteUrl();
 
-const defaultTitle = 'MedExNews — Science & Cardiology Analysis'
+const defaultTitle = "MedExNews — Science & Cardiology Analysis";
 const defaultDescription =
-  'Expert-reviewed context on evidence-based cardiology, personalized medicine, and AI in healthcare. Educational analysis—not a substitute for your physician.'
+  "Expert-reviewed context on evidence-based cardiology, personalized medicine, and AI in healthcare. Educational analysis—not a substitute for your physician.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
     default: defaultTitle,
-    template: '%s | MedExNews',
+    template: "%s | MedExNews",
   },
   description: defaultDescription,
-  applicationName: 'MedExNews',
-  authors: [{ name: 'MedExNews', url: siteUrl }],
-  creator: 'MedExNews',
-  publisher: 'MedExNews',
-  category: 'health',
+  applicationName: "MedExNews",
+  authors: [{ name: "MedExNews", url: siteUrl }],
+  creator: "MedExNews",
+  publisher: "MedExNews",
+  category: "health",
   keywords: [
-    'cardiology',
-    'evidence-based medicine',
-    'personalized medicine',
-    'medical AI',
-    'heart disease',
-    'clinical analysis',
-    'MedExNews',
+    "cardiology",
+    "evidence-based medicine",
+    "personalized medicine",
+    "medical AI",
+    "heart disease",
+    "clinical analysis",
+    "MedExNews",
   ],
   /** Sprečava iOS da automatski linkuje “lažne” telefone/email iz brojeva u tekstu (često željeno na landing stranama). */
   formatDetection: {
@@ -54,32 +55,32 @@ export const metadata: Metadata = {
     telephone: false,
   },
   alternates: {
-    canonical: '/',
+    canonical: "/",
   },
   icons: {
-    icon: [{ url: '/icon.svg', type: 'image/svg+xml', sizes: 'any' }],
-    shortcut: ['/icon.svg'],
-    apple: [{ url: '/icon.svg', sizes: '180x180' }],
+    icon: [{ url: "/icon.svg", type: "image/svg+xml", sizes: "any" }],
+    shortcut: ["/icon.svg"],
+    apple: [{ url: "/icon.svg", sizes: "180x180" }],
   },
   openGraph: {
-    type: 'website',
-    locale: 'en_US',
+    type: "website",
+    locale: "en_US",
     url: siteUrl,
-    siteName: 'MedExNews',
+    siteName: "MedExNews",
     title: defaultTitle,
     description: defaultDescription,
     images: [
       {
-        url: '/logo.webp',
-        alt: 'MedExNews',
+        url: "/logo.webp",
+        alt: "MedExNews",
       },
     ],
   },
   twitter: {
-    card: 'summary_large_image',
+    card: "summary_large_image",
     title: defaultTitle,
     description: defaultDescription,
-    images: ['/logo.webp'],
+    images: ["/logo.webp"],
   },
   robots: {
     index: true,
@@ -87,9 +88,9 @@ export const metadata: Metadata = {
     googleBot: {
       index: true,
       follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
     },
   },
   /**
@@ -101,19 +102,20 @@ export const metadata: Metadata = {
     : undefined,
   appleWebApp: {
     capable: true,
-    title: 'MedExNews',
-    statusBarStyle: 'default',
+    title: "MedExNews",
+    statusBarStyle: "default",
   },
-}
+};
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
     <html lang="en">
       <body className="antialiased bg-slate-50 text-slate-900">
+        <GoogleAnalytics />
         {/* [DODATO — note.txt SEO] JSON-LD sme i u body; Google ga indeksira. Izbegavamo ručni <head> jer Next upravlja meta tagovima. */}
         <SeoJsonLd />
         {/* [Zadržano iz Zlatnog standarda] Globalni background za sve stranice. */}
@@ -126,5 +128,5 @@ export default function RootLayout({
         {children}
       </body>
     </html>
-  )
+  );
 }

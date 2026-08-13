@@ -22,6 +22,70 @@ let cachedStripe: Stripe | null = null;
 /** Jednokratno upozorenje da pk_* i sk_* budu u istom Stripe režimu (test vs live). */
 let publishableSecretAlignmentWarned = false;
 
+type StripeKeyMode = "live" | "test" | "unknown";
+
+function getKeyMode(key: string | undefined, kind: "pk" | "sk"): StripeKeyMode {
+  const v = key?.trim() ?? "";
+  if (!v) return "unknown";
+  if (v.startsWith(`${kind}_live_`)) return "live";
+  if (v.startsWith(`${kind}_test_`)) return "test";
+  return "unknown";
+}
+
+function isStrictLiveModeExpected(): boolean {
+  if (process.env.STRIPE_ENFORCE_LIVE_MODE?.trim() === "true") {
+    return true;
+  }
+  return (
+    process.env.NODE_ENV === "production" &&
+    process.env.VERCEL_ENV === "production"
+  );
+}
+
+export function getStripeModeDiagnostics() {
+  const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim();
+  const effectiveSk = peekEffectiveStripeSecretPrefix();
+  const prodWh = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  const testWh = process.env.STRIPE_WEBHOOK_SECRET_TEST?.trim();
+  const strictLiveExpected = isStrictLiveModeExpected();
+  const publishableMode = getKeyMode(pk, "pk");
+  const secretMode = getKeyMode(effectiveSk ?? undefined, "sk");
+  const keyModesAligned =
+    publishableMode !== "unknown" &&
+    secretMode !== "unknown" &&
+    publishableMode === secretMode;
+
+  const issues: string[] = [];
+  if (!pk) issues.push("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is missing.");
+  if (!effectiveSk) issues.push("Missing effective Stripe secret key.");
+  if (!keyModesAligned) issues.push("Publishable and secret key modes differ.");
+  if (strictLiveExpected && publishableMode !== "live") {
+    issues.push("Strict live mode expects pk_live_* in production.");
+  }
+  if (strictLiveExpected && secretMode !== "live") {
+    issues.push("Strict live mode expects sk_live_* in production.");
+  }
+  if (strictLiveExpected && !prodWh) {
+    issues.push("Strict live mode requires STRIPE_WEBHOOK_SECRET.");
+  }
+  if (!strictLiveExpected && !prodWh && !testWh) {
+    issues.push("No webhook secret configured.");
+  }
+
+  return {
+    environment: process.env.NODE_ENV ?? "unknown",
+    vercelEnv: process.env.VERCEL_ENV ?? null,
+    strictLiveExpected,
+    publishableMode,
+    secretMode,
+    keyModesAligned,
+    webhookConfigured: Boolean(prodWh || testWh),
+    webhookProductionConfigured: Boolean(prodWh),
+    ok: issues.length === 0,
+    issues,
+  };
+}
+
 /**
  * [DODATO — note.txt / provera .env] Isti “efektivni” izbor kao resolveStripeSecretKey, ali bez bacanja greške.
  * Koristi se samo za dijagnostiku usklađenosti sa NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY.
@@ -75,6 +139,16 @@ export function resolveStripeSecretKey(): string {
   const isDev = process.env.NODE_ENV === "development";
   const testKey = process.env.STRIPE_TEST_SECRET_KEY?.trim();
   const primaryKey = process.env.STRIPE_SECRET_KEY?.trim();
+  const strictLive = isStrictLiveModeExpected();
+
+  if (strictLive) {
+    if (!primaryKey?.startsWith("sk_live_")) {
+      throw new Error(
+        "Stripe strict live mode: STRIPE_SECRET_KEY must be sk_live_* in production.",
+      );
+    }
+    return primaryKey;
+  }
 
   if (isDev && primaryKey?.startsWith("sk_live") && !testKey) {
     console.warn(
@@ -104,6 +178,16 @@ export function resolveStripeWebhookSecret(): string {
   const isDev = process.env.NODE_ENV === "development";
   const testWh = process.env.STRIPE_WEBHOOK_SECRET_TEST?.trim();
   const prodWh = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  const strictLive = isStrictLiveModeExpected();
+
+  if (strictLive) {
+    if (!prodWh) {
+      throw new Error(
+        "Stripe strict live mode: STRIPE_WEBHOOK_SECRET is required in production.",
+      );
+    }
+    return prodWh;
+  }
 
   if (isDev && testWh) {
     return testWh;
@@ -129,6 +213,12 @@ export function resolveStripeWebhookSecret(): string {
 export function getStripe(): Stripe {
   if (!cachedStripe) {
     warnIfStripePublishableAndSecretModesDiverge();
+    const diagnostics = getStripeModeDiagnostics();
+    if (!diagnostics.ok && diagnostics.strictLiveExpected) {
+      throw new Error(
+        `Stripe configuration invalid: ${diagnostics.issues.join(" ")}`,
+      );
+    }
     cachedStripe = new Stripe(resolveStripeSecretKey(), {
       apiVersion: "2026-02-25.clover",
     });

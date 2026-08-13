@@ -11,4 +11,10 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* [note.txt — završne korekcije] Mobilni: iOS ne uvećava font nasumično pri promeni orijentacije. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 
