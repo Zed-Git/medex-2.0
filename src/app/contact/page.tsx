@@ -1,5 +1,7 @@
 'use client';
 
+// [DODATO — Turnstile] Cloudflare Turnstile CAPTCHA widget
+import { Turnstile } from '@marsidev/react-turnstile';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -11,6 +13,10 @@ export default function ContactPage() {
     'idle',
   );
   const [error, setError] = useState<string | null>(null);
+  // [DODATO — Turnstile] Token koji widget vraća nakon rješavanja izazova
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // [DODATO — Turnstile] Site key iz env varijable (prazan = widget se ne prikazuje)
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -20,7 +26,8 @@ export default function ContactPage() {
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, message }),
+        // [DODATO — Turnstile] Proslijedi token serveru radi verifikacije
+        body: JSON.stringify({ name, email, message, turnstileToken: turnstileToken || '' }),
       });
       const data: unknown = await res.json().catch(() => ({}));
       const payload = data as { error?: string };
@@ -31,6 +38,8 @@ export default function ContactPage() {
       setName('');
       setEmail('');
       setMessage('');
+      // [DODATO — Turnstile] Resetuj token nakon uspješnog slanja
+      setTurnstileToken(null);
     } catch (err: unknown) {
       setStatus('error');
       setError(err instanceof Error ? err.message : 'Unable to send message.');
@@ -110,9 +119,24 @@ export default function ContactPage() {
                 placeholder="Write your message…"
               />
             </div>
+            {/* [DODATO — Turnstile] CAPTCHA widget — prikazuje se samo ako je site key konfigurisan */}
+            {turnstileSiteKey && (
+              <div className="pt-2">
+                <Turnstile
+                  siteKey={turnstileSiteKey}
+                  onSuccess={(token) => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken(null)}
+                  onError={() => setTurnstileToken(null)}
+                />
+              </div>
+            )}
             <button
               type="submit"
-              disabled={status === 'sending'}
+              disabled={
+                status === 'sending' ||
+                // [DODATO — Turnstile] Blokira submit dok CAPTCHA nije riješena (samo ako je key konfigurisan)
+                (turnstileSiteKey !== '' && turnstileToken === null)
+              }
               className="w-full rounded-2xl bg-[#2E5481] px-6 py-4 text-sm font-black uppercase tracking-widest text-white shadow hover:bg-[#1e3a5f] disabled:opacity-60"
             >
               {status === 'sending' ? 'Sending…' : 'Send message'}

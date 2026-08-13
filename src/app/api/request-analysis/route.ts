@@ -16,6 +16,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendRequestSubmissionEmails } from "@/lib/email-service";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
+// [DODATO — Turnstile] Server-side verifikacija Cloudflare Turnstile tokena
+// Vraća true ako prođe, ili ako TURNSTILE_SECRET_KEY nije konfigurisan (graceful degradation)
+async function verifyTurnstileToken(token: string, ip?: string): Promise<boolean> {
+  const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
+  if (!secret) return true; // Graceful: bez ključa lokalni dev radi normalno
+  if (!token) return false; // Secret postoji ali token fali — odbij
+  try {
+    const body = new URLSearchParams();
+    body.append("secret", secret);
+    body.append("response", token);
+    if (ip) body.append("remoteip", ip);
+    const res = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      { method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+    );
+    const data = (await res.json()) as { success?: boolean };
+    return data.success === true;
+  } catch (err) {
+    console.error("[request-analysis] Turnstile greška:", err);
+    return false;
+  }
+}
+
 // --- [FUNCTIONAL BLOCK: SUPABASE] ---
 // [IZMENA — note.txt / ENV] Ranije: createClient na nivou modula → `next build` puca ako je
 // NEXT_PUBLIC_SUPABASE_URL u .env.local pogrešan (npr. placeholder tekst). Sada: klijent tek u POST handler-u.
@@ -29,6 +52,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
     }
     const record = body as Record<string, unknown>;
+
+    // [DODATO — Turnstile] Provjeri CAPTCHA token iz request body-a
+    const turnstileToken =
+      typeof record.turnstileToken === "string" ? record.turnstileToken : "";
+    const clientIp =
+      req.headers.get("cf-connecting-ip") ??
+      req.headers.get("x-forwarded-for") ??
+      undefined;
+    const captchaOk = await verifyTurnstileToken(turnstileToken, clientIp ?? undefined);
+    if (!captchaOk) {
+      return NextResponse.json(
+        { error: "CAPTCHA verification failed." },
+        { status: 400 },
+      );
+    }
 
     const patientName =
       typeof record.patientName === "string" ? record.patientName : "";

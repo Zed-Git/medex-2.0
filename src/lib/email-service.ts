@@ -93,7 +93,7 @@ function getAdminEmail(): string {
   if (fromPublic) return fromPublic;
   const legacy = trimQ(process.env.MEDEX_ADMIN_EMAIL);
   if (legacy) return legacy;
-  return "medexnews@gmail.com";
+  return "hello@medexnews.com"; // [IZMENA — email] zamjena gmail → hello@medexnews.com
 }
 
 /**

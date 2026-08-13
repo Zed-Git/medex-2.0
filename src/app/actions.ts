@@ -23,6 +23,30 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { sendRequestSubmissionEmails } from "@/lib/email-service";
 
+// [DODATO — Turnstile] Server-side verifikacija Cloudflare Turnstile tokena
+// Vraća true ako verifikacija prođe, ili ako TURNSTILE_SECRET_KEY nije konfigurisan (graceful degradation)
+async function verifyTurnstileToken(token: string): Promise<boolean> {
+  const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
+  // Graceful degradation: ako secret nije konfigurisan, pusti kroz (lokalni dev bez ključeva)
+  if (!secret) return true;
+  // Secret je konfigurisan ali token fali — odbij zahtjev
+  if (!token) return false;
+  try {
+    const body = new URLSearchParams();
+    body.append("secret", secret);
+    body.append("response", token);
+    const res = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      { method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+    );
+    const data = (await res.json()) as { success?: boolean };
+    return data.success === true;
+  } catch (err) {
+    console.error("[actions] Turnstile verifikacija greška:", err);
+    return false;
+  }
+}
+
 // -------------------------------
 //  SUBMIT MEDICAL REQUEST
 // -------------------------------
@@ -31,6 +55,12 @@ export async function submitMedicalRequest(formData: FormData) {
     const admin = getSupabaseAdmin();
     // --- CELINA 1: IZVLAČENJE PODATAKA ---
     const patientName = formData.get("patientName") as string;
+    // [DODATO — Turnstile] Provjeri CAPTCHA token prije obrade forme
+    const turnstileToken = (formData.get("turnstileToken") as string) || "";
+    const captchaOk = await verifyTurnstileToken(turnstileToken);
+    if (!captchaOk) {
+      return { success: false, error: "CAPTCHA verification failed. Please complete the challenge and try again." };
+    }
     const email = formData.get("email") as string;
     const phone = formData.get("phone") as string; // Iz forme
     const urgency = formData.get("urgency") as string;

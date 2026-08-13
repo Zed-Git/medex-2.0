@@ -1,5 +1,7 @@
 "use client";
 
+// [DODATO — Turnstile] Cloudflare Turnstile CAPTCHA widget
+import { Turnstile } from "@marsidev/react-turnstile";
 import { useState, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -146,6 +148,10 @@ export default function LandingPage() {
   );
   // --- [DODATO] Surface server/validation errors (previously status was 'error' with no UI) ---
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // [DODATO — Turnstile] Token koji Cloudflare widget vraća nakon rješavanja izazova
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  // [DODATO — Turnstile] Site key iz env varijable (javni ključ, prazan = widget se ne prikazuje)
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
   useEffect(() => {
     // [DODATO vs Zlatni standard] Na hard refresh-u browser ponekad “vrati” skrol na sredinu stranice.
@@ -309,6 +315,8 @@ export default function LandingPage() {
     setFormValidationError(null);
     formData.append("medicalAnamnesis", JSON.stringify(anamnezaData));
     if (file) formData.append("medicalFile", file);
+    // [DODATO — Turnstile] Proslijedi token serveru radi verifikacije
+    formData.append("turnstileToken", turnstileToken || "");
 
     try {
       const result = await submitMedicalRequest(formData);
@@ -387,6 +395,8 @@ export default function LandingPage() {
       setAnamnezaData(null);
       setFormValidationError(null);
       setSubmitError(null);
+      // [DODATO — Turnstile] Resetuj CAPTCHA token pri novom zahtjevu
+      setTurnstileToken(null);
       setStatus("idle");
     }
 
@@ -808,9 +818,24 @@ export default function LandingPage() {
                     .
                   </span>
                 </label>
+                {/* [DODATO — Turnstile] Cloudflare CAPTCHA widget — prikazuje se samo ako je site key konfigurisan */}
+                {turnstileSiteKey && (
+                  <div className="mb-4">
+                    <Turnstile
+                      siteKey={turnstileSiteKey}
+                      onSuccess={(token) => setTurnstileToken(token)}
+                      onExpire={() => setTurnstileToken(null)}
+                      onError={() => setTurnstileToken(null)}
+                    />
+                  </div>
+                )}
                 <button
                   type="submit"
-                  disabled={status === "loading"}
+                  disabled={
+                    status === "loading" ||
+                    // [DODATO — Turnstile] Blokira submit dok CAPTCHA nije riješena (samo ako je key konfigurisan)
+                    (turnstileSiteKey !== "" && turnstileToken === null)
+                  }
                   className="touch-manipulation w-full bg-[#E31E24] text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest hover:bg-red-700 transition-all text-sm italic disabled:opacity-60"
                 >
                   {status === "loading"
